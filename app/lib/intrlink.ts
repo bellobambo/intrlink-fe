@@ -28,11 +28,43 @@ export const intrlinkAbi = [
   { type: "function", name: "getPaymentIntent", stateMutability: "view", inputs: [{ name: "intentId", type: "bytes32" }], outputs: [{ type: "tuple", components: [{ name: "merchantId", type: "bytes32" }, { name: "itemId", type: "bytes32" }, { name: "merchantOwner", type: "address" }, { name: "settlementAddress", type: "address" }, { name: "asset", type: "address" }, { name: "fiatAmountMinor", type: "uint128" }, { name: "requiredAssetAmount", type: "uint128" }, { name: "quotedAt", type: "uint64" }, { name: "expiresAt", type: "uint64" }, { name: "metadataHash", type: "bytes32" }, { name: "status", type: "uint8" }] }] },
   { type: "function", name: "registerMerchant", stateMutability: "nonpayable", inputs: [{ name: "merchantId", type: "bytes32" }, { name: "settlementAddress", type: "address" }, { name: "companyName", type: "string" }, { name: "ownerName", type: "string" }, { name: "location", type: "string" }], outputs: [] },
   { type: "function", name: "addAsset", stateMutability: "nonpayable", inputs: [{ name: "merchantId", type: "bytes32" }, { name: "asset", type: "address" }, { name: "feedId", type: "bytes21" }, { name: "tokenDecimals", type: "uint8" }, { name: "feedDecimals", type: "uint8" }], outputs: [] },
+  {
+    type: "function",
+    name: "addAssets",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "merchantId", type: "bytes32" },
+      {
+        name: "assets",
+        type: "tuple[]",
+        components: [
+          { name: "asset", type: "address" },
+          { name: "feedId", type: "bytes21" },
+          { name: "tokenDecimals", type: "uint8" },
+          { name: "feedDecimals", type: "uint8" },
+        ],
+      },
+    ],
+    outputs: [],
+  },
   { type: "function", name: "addItem", stateMutability: "nonpayable", inputs: [{ name: "merchantId", type: "bytes32" }, { name: "itemId", type: "bytes32" }, { name: "name", type: "string" }, { name: "priceMinor", type: "uint128" }, { name: "category", type: "string" }], outputs: [] },
   { type: "function", name: "createPaymentIntent", stateMutability: "nonpayable", inputs: [{ name: "intentId", type: "bytes32" }, { name: "merchantId", type: "bytes32" }, { name: "asset", type: "address" }, { name: "fiatAmountMinor", type: "uint128" }, { name: "expiresAt", type: "uint64" }, { name: "metadataHash", type: "bytes32" }], outputs: [{ name: "requiredAssetAmount", type: "uint256" }] },
   { type: "function", name: "createItemPaymentIntent", stateMutability: "nonpayable", inputs: [{ name: "intentId", type: "bytes32" }, { name: "merchantId", type: "bytes32" }, { name: "itemId", type: "bytes32" }, { name: "asset", type: "address" }, { name: "expiresAt", type: "uint64" }, { name: "metadataHash", type: "bytes32" }], outputs: [{ name: "requiredAssetAmount", type: "uint256" }] },
   { type: "function", name: "payNative", stateMutability: "payable", inputs: [{ name: "intentId", type: "bytes32" }], outputs: [] },
   { type: "function", name: "payToken", stateMutability: "nonpayable", inputs: [{ name: "intentId", type: "bytes32" }], outputs: [] },
+  { type: "function", name: "updateMerchantProfile", stateMutability: "nonpayable", inputs: [{ name: "merchantId", type: "bytes32" }, { name: "companyName", type: "string" }, { name: "ownerName", type: "string" }, { name: "location", type: "string" }], outputs: [] },
+  { type: "function", name: "updateSettlementAddress", stateMutability: "nonpayable", inputs: [{ name: "merchantId", type: "bytes32" }, { name: "newSettlementAddress", type: "address" }], outputs: [] },
+  {
+    type: "event",
+    name: "AssetEnabled",
+    inputs: [
+      { name: "merchantId", type: "bytes32", indexed: true },
+      { name: "asset", type: "address", indexed: true },
+      { name: "feedId", type: "bytes21", indexed: true },
+      { name: "tokenDecimals", type: "uint8", indexed: false },
+      { name: "feedDecimals", type: "uint8", indexed: false },
+    ],
+  },
 ] as const;
 
 export const itemAddedEvent = {

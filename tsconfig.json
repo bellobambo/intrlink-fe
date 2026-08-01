@@ -30,5 +30,12 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    "check_address.ts",
+    "fetch_addresses.ts",
+    "test-getlogs.js",
+    "test_decimals.js",
+    "test_selector.js"
+  ]
 }

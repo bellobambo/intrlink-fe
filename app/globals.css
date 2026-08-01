@@ -33,6 +33,223 @@ button:disabled {
   cursor: wait;
 }
 
+.share-checkout > p:first-child {
+  color: #47794d;
+  line-height: 1.5;
+}
+
+.share-link-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.share-link-row input {
+  min-width: 0;
+  flex: 1;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 10px;
+  color: var(--ink);
+}
+
+.field-label {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.payment-summary {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 20px;
+  background: #f6fcf7;
+}
+
+.payment-summary h2 {
+  margin: 8px 0 18px;
+  color: var(--forest);
+}
+
+.payment-lines {
+  display: grid;
+  gap: 10px;
+}
+
+.payment-line, .payment-total {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.payment-line {
+  color: #47794d;
+}
+
+.payment-quote-details {
+  display: grid;
+  gap: 7px;
+  margin-top: 18px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+  color: #47794d;
+  font-size: 13px;
+}
+
+.payment-quote-details > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.payment-quote-details strong {
+  color: var(--forest);
+}
+
+.payment-total {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  color: var(--forest);
+  font-size: 18px;
+}
+
+.share-payment-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 20px;
+  background: #f6fcf7;
+}
+
+.share-payment-card h2 {
+  margin: 8px 0;
+  color: var(--forest);
+}
+
+.share-payment-card > p:not(.eyebrow) {
+  color: #47794d;
+  line-height: 1.5;
+}
+
+.flow-card.merchant-pay-flow {
+  max-width: 1180px;
+}
+
+.merchant-payment-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.payment-history {
+  width: 100%;
+}
+
+.payment-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.payment-history-header h2 {
+  margin: 0;
+}
+
+.payment-history-header p {
+  margin: 6px 0 0;
+  color: #47794d;
+}
+
+.payment-history-table {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f6fcf7;
+}
+
+.payment-history-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 16px;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f6fcf7;
+  color: var(--forest);
+  font-size: 16px;
+}
+
+.payment-history-total strong {
+  font-size: 22px;
+}
+
+.payment-history-row {
+  display: grid;
+  grid-template-columns: 1.6fr .7fr .7fr .8fr;
+  gap: 16px;
+  align-items: center;
+  padding: 15px 18px;
+  border-top: 1px solid var(--line);
+}
+
+.payment-history-row:first-child {
+  border-top: 0;
+}
+
+.payment-history-head {
+  color: #47794d;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.payment-id {
+  width: fit-content;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--forest);
+  font: inherit;
+  font-weight: 700;
+}
+
+.payment-status {
+  width: fit-content;
+  padding: 5px 9px;
+  border-radius: 99px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.payment-status-pending { background: #fff4cf; color: #805d00; }
+.payment-status-paid { background: #d9efdb; color: #1b5e20; }
+.payment-status-cancelled, .payment-status-expired { background: #f5dfdf; color: #9a3131; }
+
+.payment-history-empty {
+  min-height: 220px;
+  padding: 32px;
+}
+
+.merchant-payment-grid > .payment-summary,
+.merchant-payment-grid > .share-payment-card {
+  width: 100%;
+  height: 100%;
+}
+
+.merchant-payment-grid > .payment-summary {
+  display: flex;
+  flex-direction: column;
+}
+
+.merchant-payment-grid > .payment-summary .payment-total {
+  margin-top: auto;
+}
+
 .app, .landing {
   min-height: 100vh;
   background: var(--mint);
@@ -215,6 +432,7 @@ button:disabled {
 .workspace {
   max-width: 1280px;
   margin: 0 auto;
+  position: relative;
   /* bottom padding = dock height (~56px) + dock offset (24px) + breathing room (100px) */
   padding: 76px 24px 180px;
 }
@@ -223,6 +441,74 @@ button:disabled {
   max-width: 600px;
   margin: 0 auto 36px;
   text-align: left;
+}
+
+.workspace:has(.payment-history) .workspace-header {
+  max-width: none;
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.workspace:has(.payment-summary) .workspace-header {
+  max-width: none;
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.clear-checkout-button {
+  position: absolute;
+  top: 86px;
+  right: 24px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 8px 14px;
+  background: #f6fcf7;
+  color: var(--forest);
+  font-weight: 700;
+}
+
+.clear-checkout-button:hover {
+  background: #d9efdb;
+}
+
+.workspace:has(.customer-payment-view) .view-tabs {
+  display: none;
+}
+
+.payment-receipt {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 36px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f6fcf7;
+  text-align: center;
+}
+
+.payment-receipt h2 {
+  margin: 10px 0;
+  color: var(--forest);
+}
+
+.payment-receipt > p:not(.eyebrow) {
+  color: #47794d;
+  line-height: 1.5;
+}
+
+.receipt-total {
+  display: flex;
+  justify-content: space-between;
+  margin: 24px 0;
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  color: var(--forest);
+  font-size: 18px;
+}
+
+.payment-receipt a {
+  color: var(--forest);
+  font-weight: 700;
 }
 
 .workspace-header h1 {
@@ -447,6 +733,10 @@ button:disabled {
   .workspace-header h1 {
     font-size: 30px;
   }
+  .clear-checkout-button {
+    top: 58px;
+    right: 16px;
+  }
   .view-tabs {
     bottom: 12px;
     padding: 4px;
@@ -467,6 +757,15 @@ button:disabled {
   }
   .form-grid {
     grid-template-columns: 1fr;
+  }
+  .merchant-payment-grid {
+    grid-template-columns: 1fr;
+  }
+  .payment-history-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .payment-history-head {
+    display: none;
   }
   .form-grid .primary-button {
     width: auto;
@@ -868,7 +1167,7 @@ body{font-family:"Ubuntu",Arial,Helvetica,sans-serif}.brand{font-size:23px}.wall
   align-self: flex-end;
   justify-content: center;
   min-height: 36px;
-  font-size: 11px;
+  font-size: 14px;
   padding: 0 16px;
   background: var(--mint);
   color: var(--forest);

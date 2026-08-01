@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Intrlink — Agreement dashboard",
+  title: "Intrlink",
   description: "Manage agreements and payouts with confidence.",
 };
 

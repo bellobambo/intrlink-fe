@@ -8,7 +8,8 @@ import {
 } from "viem";
 import type { Chain } from "viem/chains";
 
-export const intrlinkAddress = "0x179BF34155cD129FeB3b2440f50418C4836e65D6" as const;
+export const intrlinkAddress = "0x31425BdcBcbEAFa6A9DB437798967bb8571eC3C0" as const;
+export const intrlinkDeploymentBlock = BigInt(33515793);
 
 export const flareCoston2: Chain = {
   id: 114,
@@ -54,6 +55,17 @@ export const intrlinkAbi = [
   { type: "function", name: "payToken", stateMutability: "nonpayable", inputs: [{ name: "intentId", type: "bytes32" }], outputs: [] },
   { type: "function", name: "updateMerchantProfile", stateMutability: "nonpayable", inputs: [{ name: "merchantId", type: "bytes32" }, { name: "companyName", type: "string" }, { name: "ownerName", type: "string" }, { name: "location", type: "string" }], outputs: [] },
   { type: "function", name: "updateSettlementAddress", stateMutability: "nonpayable", inputs: [{ name: "merchantId", type: "bytes32" }, { name: "newSettlementAddress", type: "address" }], outputs: [] },
+  { type: "function", name: "disableAsset", stateMutability: "nonpayable", inputs: [{ name: "merchantId", type: "bytes32" }, { name: "asset", type: "address" }], outputs: [] },
+  { type: "function", name: "enableAsset", stateMutability: "nonpayable", inputs: [{ name: "merchantId", type: "bytes32" }, { name: "asset", type: "address" }], outputs: [] },
+  { type: "function", name: "addItems", stateMutability: "nonpayable", inputs: [{ name: "merchantId", type: "bytes32" }, { name: "items", type: "tuple[]", components: [{ name: "itemId", type: "bytes32" }, { name: "name", type: "string" }, { name: "priceMinor", type: "uint128" }, { name: "category", type: "string" }] }], outputs: [] },
+  { type: "function", name: "updateItem", stateMutability: "nonpayable", inputs: [{ name: "merchantId", type: "bytes32" }, { name: "itemId", type: "bytes32" }, { name: "name", type: "string" }, { name: "priceMinor", type: "uint128" }, { name: "category", type: "string" }], outputs: [] },
+  { type: "function", name: "setItemAvailability", stateMutability: "nonpayable", inputs: [{ name: "merchantId", type: "bytes32" }, { name: "itemId", type: "bytes32" }, { name: "available", type: "bool" }], outputs: [] },
+  { type: "function", name: "createCartPaymentIntent", stateMutability: "nonpayable", inputs: [{ name: "intentId", type: "bytes32" }, { name: "merchantId", type: "bytes32" }, { name: "cart", type: "tuple[]", components: [{ name: "itemId", type: "bytes32" }, { name: "quantity", type: "uint128" }] }, { name: "asset", type: "address" }, { name: "expiresAt", type: "uint64" }, { name: "metadataHash", type: "bytes32" }], outputs: [{ name: "requiredAssetAmount", type: "uint256" }] },
+  { type: "function", name: "cancelIntent", stateMutability: "nonpayable", inputs: [{ name: "intentId", type: "bytes32" }], outputs: [] },
+  { type: "function", name: "expireIntent", stateMutability: "nonpayable", inputs: [{ name: "intentId", type: "bytes32" }], outputs: [] },
+  { type: "function", name: "getMerchantAsset", stateMutability: "view", inputs: [{ name: "merchantId", type: "bytes32" }, { name: "asset", type: "address" }], outputs: [{ type: "tuple", components: [{ name: "feedId", type: "bytes21" }, { name: "tokenDecimals", type: "uint8" }, { name: "feedDecimals", type: "uint8" }, { name: "enabled", type: "bool" }, { name: "exists", type: "bool" }] }] },
+  { type: "function", name: "getMerchantItem", stateMutability: "view", inputs: [{ name: "merchantId", type: "bytes32" }, { name: "itemId", type: "bytes32" }], outputs: [{ type: "tuple", components: [{ name: "name", type: "string" }, { name: "priceMinor", type: "uint128" }, { name: "category", type: "string" }, { name: "available", type: "bool" }, { name: "exists", type: "bool" }] }] },
+  { type: "function", name: "getPaymentIntentCart", stateMutability: "view", inputs: [{ name: "intentId", type: "bytes32" }], outputs: [{ type: "tuple[]", components: [{ name: "itemId", type: "bytes32" }, { name: "quantity", type: "uint128" }, { name: "unitPriceMinor", type: "uint128" }] }] },
   {
     type: "event",
     name: "AssetEnabled",
@@ -79,12 +91,25 @@ export const itemAddedEvent = {
   ],
 } as const;
 
+export const assetEnabledEvent = {
+  type: "event",
+  name: "AssetEnabled",
+  inputs: [
+    { name: "merchantId", type: "bytes32", indexed: true },
+    { name: "asset", type: "address", indexed: true },
+    { name: "feedId", type: "bytes21", indexed: true },
+    { name: "tokenDecimals", type: "uint8", indexed: false },
+    { name: "feedDecimals", type: "uint8", indexed: false },
+  ],
+} as const;
+
 export const erc20Abi = [
   { type: "function", name: "allowance", stateMutability: "view", inputs: [{ name: "owner", type: "address" }, { name: "spender", type: "address" }], outputs: [{ type: "uint256" }] },
   { type: "function", name: "approve", stateMutability: "nonpayable", inputs: [{ name: "spender", type: "address" }, { name: "amount", type: "uint256" }], outputs: [{ type: "bool" }] },
 ] as const;
 
 export const publicClient = createPublicClient({ chain: flareCoston2, transport: http() });
+export const indexerClient = createPublicClient({ chain: flareCoston2, transport: http("https://coston2-explorer.flare.network/api/eth-rpc") });
 
 export type WalletProvider = {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
@@ -92,21 +117,27 @@ export type WalletProvider = {
   removeListener?: (event: string, listener: (...args: unknown[]) => void) => void;
 };
 
+function hasProviderErrorCode(error: unknown, code: number): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === code;
+}
+
 export function getProvider() {
   return typeof window === "undefined" ? undefined : (window.ethereum as WalletProvider | undefined);
 }
 
 export async function connectCoston2(provider: WalletProvider) {
-  const accounts = await provider.request({ method: "eth_requestAccounts" }) as Address[];
   const chainId = await provider.request({ method: "eth_chainId" }) as Hex;
   if (Number(chainId) !== flareCoston2.id) {
     try {
       await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: "0x72" }] });
     } catch (error: unknown) {
-      if (!(error instanceof Error) || !("code" in error) || error.code !== 4902) throw error;
+      if (!hasProviderErrorCode(error, 4902)) throw error;
       await provider.request({ method: "wallet_addEthereumChain", params: [{ chainId: "0x72", chainName: flareCoston2.name, nativeCurrency: flareCoston2.nativeCurrency, rpcUrls: flareCoston2.rpcUrls.default.http, blockExplorerUrls: ["https://coston2.testnet.flarescan.com"] }] });
+      await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: "0x72" }] });
     }
   }
+
+  const accounts = await provider.request({ method: "eth_requestAccounts" }) as Address[];
   if (!accounts[0]) throw new Error("No wallet account was returned.");
   return accounts[0];
 }

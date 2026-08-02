@@ -144,6 +144,8 @@ button:disabled {
 
 .payment-history {
   width: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .payment-history-header {
@@ -164,7 +166,9 @@ button:disabled {
 }
 
 .payment-history-table {
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  max-height: min(60vh, 560px);
   border: 1px solid var(--line);
   border-radius: 10px;
   background: #f6fcf7;
@@ -231,8 +235,19 @@ button:disabled {
 .payment-status-cancelled, .payment-status-expired { background: #f5dfdf; color: #9a3131; }
 
 .payment-history-empty {
-  min-height: 220px;
-  padding: 32px;
+  min-height: min(42vh, 320px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0 20px;
+}
+
+.payment-history-empty p {
+  margin: 0;
+  color: #47794d;
+  line-height: 1.6;
+  font-size: 15px;
 }
 
 .merchant-payment-grid > .payment-summary,

@@ -10,6 +10,7 @@ import toast, { Toaster } from "react-hot-toast";
 
 
 const CONTRACT_ERROR_MESSAGES: Record<string, string> = {
+  "0xf7640c4b": "This merchant is already registered. Continuing with the existing merchant profile.",
   "0x6c49afa1": "This checkout has expired. Ask the merchant to create a new payment link.",
   "0xe7ecdcfd": "This checkout is no longer payable. It may already be paid, cancelled, or expired.",
   "0x5693fffb": "The wallet did not send the exact amount required for this checkout.",
@@ -20,6 +21,9 @@ function getErrMsg(err: unknown, fallback: string) {
   const errorText = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
   for (const [selector, message] of Object.entries(CONTRACT_ERROR_MESSAGES)) {
     if (errorText.includes(selector)) return message;
+  }
+  if (errorText.includes("merchantalreadyexists")) {
+    return "This merchant is already registered. Continuing with the existing merchant profile.";
   }
   if (err instanceof Error) {
     if ('shortMessage' in err && typeof (err as any).shortMessage === 'string') return (err as any).shortMessage;
@@ -115,18 +119,18 @@ type PaymentDetails = { merchantId: Hex; asset: Address; fiatAmountMinor: bigint
 type PaymentLine = { id: Hex; name: string; quantity: bigint; unitPriceMinor: bigint };
 type PaymentHistoryEntry = PaymentDetails & { id: Hex; createdAt: bigint };
 
-const merchantRegisteredEvent = {
-  type: "event",
-  name: "MerchantRegistered",
-  inputs: [
-    { name: "merchantId", type: "bytes32", indexed: true },
-    { name: "owner", type: "address", indexed: true },
-    { name: "settlementAddress", type: "address", indexed: true },
-  ],
-} as const;
-
 const LOG_BLOCK_RANGE = BigInt(30);
 const PAYMENT_INTENT_CREATED_TOPIC = keccak256(stringToHex("PaymentIntentCreated(bytes32,bytes32,bytes32,address,uint256,uint256,uint64,bytes32)"));
+const MERCHANT_PROFILE_CACHE_PREFIX = "intrlink:merchant-profile:";
+
+type MerchantProfileCache = {
+  merchantId: Hex;
+  merchantName: string;
+  ownerName: string;
+  location: string;
+  settlementAddress: Address;
+  updatedAt: number;
+};
 
 function paymentStatus(status: number, expiresAt: bigint) {
   if (status === 1 && BigInt(Math.floor(Date.now() / 1000)) >= expiresAt) return "Expired";
@@ -134,31 +138,66 @@ function paymentStatus(status: number, expiresAt: bigint) {
 }
 
 async function findMerchantIdByOwner(owner: Address): Promise<Hex | undefined> {
-  const latestBlock = await publicClient.getBlockNumber();
-
-  // Coston2 limits eth_getLogs to a maximum range of 30 blocks. Search newest
-  // to oldest so the most recent registration is found without scanning more
-  // of the chain than necessary.
-  for (let toBlock = latestBlock; toBlock >= intrlinkDeploymentBlock;) {
-    const fromBlock = toBlock - (LOG_BLOCK_RANGE - BigInt(1)) > intrlinkDeploymentBlock
-      ? toBlock - (LOG_BLOCK_RANGE - BigInt(1))
-      : intrlinkDeploymentBlock;
-    const logs = await publicClient.getLogs({
+  try {
+    const merchantId = await publicClient.readContract({
       address: intrlinkAddress,
-      event: merchantRegisteredEvent,
-      args: { owner },
-      fromBlock,
-      toBlock,
+      abi: intrlinkAbi,
+      functionName: "getMerchantIdByOwner",
+      args: [owner],
     });
-    const merchantId = logs.at(-1)?.args.merchantId;
-    if (merchantId) return merchantId;
-    if (fromBlock === intrlinkDeploymentBlock) break;
-    toBlock = fromBlock - BigInt(1);
+    if (merchantId && merchantId !== "0x0000000000000000000000000000000000000000000000000000000000000000") {
+      return merchantId;
+    }
+  } catch (error) {
+    console.warn("Merchant lookup by connected wallet failed:", error);
   }
 }
 
 function hasPaymentIntentInUrl() {
   return typeof window !== "undefined" && Boolean(new URLSearchParams(window.location.search).get("intentId"));
+}
+
+function merchantProfileCacheKey(account: Address) {
+  return `${MERCHANT_PROFILE_CACHE_PREFIX}${account.toLowerCase()}`;
+}
+
+function readMerchantProfileCache(account: Address): MerchantProfileCache | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const cached = window.localStorage.getItem(merchantProfileCacheKey(account));
+    if (!cached) return null;
+    return JSON.parse(cached) as MerchantProfileCache;
+  } catch {
+    return null;
+  }
+}
+
+function writeMerchantProfileCache(account: Address, profile: MerchantProfileCache) {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(merchantProfileCacheKey(account), JSON.stringify(profile));
+  } catch {
+    // Ignore cache write failures.
+  }
+}
+
+function clearMerchantProfileCache(account: Address) {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.removeItem(merchantProfileCacheKey(account));
+  } catch {
+    // Ignore cache clear failures.
+  }
+}
+
+function refreshAfterContractWrite() {
+  if (typeof window === "undefined") return;
+  window.setTimeout(() => {
+    window.location.reload();
+  }, 450);
 }
 
 function Brand() {
@@ -307,15 +346,39 @@ export default function Home() {
   useEffect(() => {
     if (!account) {
       setMerchantId("");
+      setMerchantName("");
+      setOwnerName("");
+      setLocation("");
+      setSettlementAddress("");
+      setIsCheckingMerchant(false);
       return;
     }
     const merchantOwner = account;
+    const cachedProfile = readMerchantProfileCache(merchantOwner);
+
+    const applyMerchantProfile = (profile: MerchantProfileCache) => {
+      setMerchantId(profile.merchantId);
+      setMerchantName(profile.merchantName);
+      setOwnerName(profile.ownerName);
+      setLocation(profile.location);
+      setSettlementAddress(profile.settlementAddress);
+    };
+
+    if (cachedProfile) {
+      applyMerchantProfile(cachedProfile);
+      if (!hasPaymentIntentInUrl()) setView("checkout");
+    } else {
+      setMerchantId("");
+      setMerchantName("");
+      setOwnerName("");
+      setLocation("");
+      setSettlementAddress("");
+    }
 
     let cancelled = false;
 
     async function findMerchant() {
-      setIsCheckingMerchant(true);
-      setMerchantId("");
+      setIsCheckingMerchant(!cachedProfile);
       try {
         const mId = await findMerchantIdByOwner(merchantOwner);
         if (mId) {
@@ -326,12 +389,29 @@ export default function Home() {
             args: [mId]
           });
           if (!cancelled && details.exists) {
-            setMerchantId(mId);
+            const profile = {
+              merchantId: mId,
+              merchantName: details.companyName,
+              ownerName: details.ownerName,
+              location: details.location,
+              settlementAddress: details.settlementAddress,
+              updatedAt: Date.now(),
+            } satisfies MerchantProfileCache;
+            applyMerchantProfile(profile);
+            writeMerchantProfileCache(merchantOwner, profile);
             if (!hasPaymentIntentInUrl()) setView("checkout");
-            setMerchantName(details.companyName);
-            setOwnerName(details.ownerName);
-            setLocation(details.location);
-            setSettlementAddress(details.settlementAddress);
+            setIsCheckingMerchant(false);
+            return;
+          }
+        }
+        if (!cancelled) {
+          clearMerchantProfileCache(merchantOwner);
+          if (!cachedProfile) {
+            setMerchantId("");
+            setMerchantName("");
+            setOwnerName("");
+            setLocation("");
+            setSettlementAddress("");
           }
         }
       } catch (err) {
@@ -354,7 +434,7 @@ export default function Home() {
         if (accounts && accounts.length > 0 && accounts[0]) {
           const activeAccount = await connectCoston2(activeProvider);
           setAccount(activeAccount);
-          if (!hasPaymentIntentInUrl()) setView("merchant");
+          if (!hasPaymentIntentInUrl() && !readMerchantProfileCache(activeAccount)) setView("merchant");
         }
       } catch (error) {
         console.error("Auto-connect failed:", error);
@@ -368,7 +448,7 @@ export default function Home() {
       if (accs && accs.length > 0 && accs[0]) {
         setAccount(accs[0]);
         setSettlementAddressInput(accs[0]);
-        if (!hasPaymentIntentInUrl()) setView("merchant");
+        if (!hasPaymentIntentInUrl() && !readMerchantProfileCache(accs[0])) setView("merchant");
       } else {
         setAccount(undefined);
         setSettlementAddressInput("");
@@ -402,7 +482,7 @@ export default function Home() {
       const activeAccount = await connectCoston2(provider);
       setAccount(activeAccount);
       setSettlementAddressInput(activeAccount);
-      if (!hasPaymentIntentInUrl()) setView("merchant");
+      if (!hasPaymentIntentInUrl() && !readMerchantProfileCache(activeAccount)) setView("merchant");
       toast.success("Wallet connected successfully");
     }
     catch (error) { toast.error(getErrMsg(error, "Could not connect wallet")); }
@@ -425,8 +505,19 @@ export default function Home() {
     try {
       setBusy(true);
       const hash = await sendWrite("updateMerchantProfile", [merchantId, merchantName.trim(), ownerName.trim(), location.trim()]);
+      if (account) {
+        writeMerchantProfileCache(account, {
+          merchantId,
+          merchantName: merchantName.trim(),
+          ownerName: ownerName.trim(),
+          location: location.trim(),
+          settlementAddress: settlementAddress as Address,
+          updatedAt: Date.now(),
+        });
+      }
       toast.success(`Profile updated: ${hash.slice(0, 10)}…`);
       setIsMerchantModalOpen(false);
+      refreshAfterContractWrite();
     } catch (error) {
       toast.success(error instanceof Error ? error.message : "Profile update failed");
     } finally {
@@ -440,8 +531,19 @@ export default function Home() {
     try {
       setBusy(true);
       const hash = await sendWrite("updateSettlementAddress", [merchantId, settlementAddress as Address]);
+      if (account) {
+        writeMerchantProfileCache(account, {
+          merchantId,
+          merchantName: merchantName.trim(),
+          ownerName: ownerName.trim(),
+          location: location.trim(),
+          settlementAddress: settlementAddress as Address,
+          updatedAt: Date.now(),
+        });
+      }
       toast.success(`Settlement address updated: ${hash.slice(0, 10)}…`);
       setIsMerchantModalOpen(false);
+      refreshAfterContractWrite();
     } catch (error) {
       toast.success(error instanceof Error ? error.message : "Address update failed");
     } finally {
@@ -453,7 +555,42 @@ export default function Home() {
     event.preventDefault();
     if (!account || !merchantName.trim() || !ownerName.trim() || !location.trim() || !isAddress(settlementAddressInput)) return toast.error("Complete all details correctly (verify settlement address).");
     const id = keccak256(stringToHex(`intrlink:merchant:${account.toLowerCase()}:${merchantName.trim().toLowerCase()}`));
-    try { setBusy(true); const hash = await sendWrite("registerMerchant", [id, settlementAddressInput.trim() as Address, merchantName.trim(), ownerName.trim(), location.trim()]); setMerchantId(id); setView("asset"); toast.success(`Merchant registered: ${hash.slice(0, 10)}…`); }
+    try {
+      setBusy(true);
+      const existingMerchant = await publicClient.readContract({
+        address: intrlinkAddress,
+        abi: intrlinkAbi,
+        functionName: "getMerchant",
+        args: [id],
+      });
+      if (existingMerchant.exists) {
+        writeMerchantProfileCache(account, {
+          merchantId: id,
+          merchantName: existingMerchant.companyName,
+          ownerName: existingMerchant.ownerName,
+          location: existingMerchant.location,
+          settlementAddress: existingMerchant.settlementAddress,
+          updatedAt: Date.now(),
+        });
+        setMerchantId(id);
+        setView("asset");
+        toast.success("Merchant already registered. Continuing with the existing profile.");
+        return;
+      }
+      const hash = await sendWrite("registerMerchant", [id, settlementAddressInput.trim() as Address, merchantName.trim(), ownerName.trim(), location.trim()]);
+      writeMerchantProfileCache(account, {
+        merchantId: id,
+        merchantName: merchantName.trim(),
+        ownerName: ownerName.trim(),
+        location: location.trim(),
+        settlementAddress: settlementAddressInput.trim() as Address,
+        updatedAt: Date.now(),
+      });
+      setMerchantId(id);
+      setView("asset");
+      toast.success(`Merchant registered: ${hash.slice(0, 10)}…`);
+      refreshAfterContractWrite();
+    }
     catch (error) { toast.error(getErrMsg(error, "Merchant registration failed")); }
     finally { setBusy(false); }
   }
@@ -483,6 +620,7 @@ export default function Home() {
       toast.success(`✓ ${toEnable.length} asset${toEnable.length === 1 ? "" : "s"} enabled: ${hash.slice(0, 10)}…`);
       loadEnabledAssets(true);
       setView("checkout");
+      refreshAfterContractWrite();
     } catch (batchErr) {
       // Fallback: enable one-by-one (handles already-existing asset errors gracefully)
       toast.success(`Batch failed — trying individually: ${batchErr instanceof Error ? batchErr.message.slice(0, 60) : "error"}`);
@@ -500,7 +638,10 @@ export default function Home() {
       setEnablingProgress(null);
       setBusy(false);
       loadEnabledAssets(true);
-      if (enabled > 0) setView("checkout");
+      if (enabled > 0) {
+        setView("checkout");
+        refreshAfterContractWrite();
+      }
     }
   }
 
@@ -539,6 +680,7 @@ export default function Home() {
       setBatchItems([{ name: "", price: "", category: "" }]);
       setIsAddItemModalOpen(false);
       loadCatalogue(true);
+      refreshAfterContractWrite();
     } catch (error) {
       toast.error(getErrMsg(error, "Could not add items"));
     } finally {
@@ -549,7 +691,7 @@ export default function Home() {
   async function loadEnabledAssets(silent = false) {
     if (!merchantId) return;
     try {
-      const logs = await indexerClient.getLogs({ address: intrlinkAddress, event: assetEnabledEvent, args: { merchantId }, fromBlock: BigInt(33360332) });
+      const logs = await indexerClient.getLogs({ address: intrlinkAddress, event: assetEnabledEvent, args: { merchantId }, fromBlock: intrlinkDeploymentBlock });
       const assetAddresses = logs.flatMap((log) => log.args.asset ? [log.args.asset] : []);
       const uniqueAssets = Array.from(new Set(assetAddresses));
       setEnabledAssetsList(uniqueAssets as Address[]);
@@ -562,7 +704,7 @@ export default function Home() {
     if (!merchantId) return !silent && toast.error("Enter a merchant ID first.");
     try {
       setBusy(true);
-      const logs = await indexerClient.getLogs({ address: intrlinkAddress, event: itemAddedEvent, args: { merchantId }, fromBlock: BigInt(33360332) });
+      const logs = await indexerClient.getLogs({ address: intrlinkAddress, event: itemAddedEvent, args: { merchantId }, fromBlock: intrlinkDeploymentBlock });
       const items = logs.flatMap((log) => log.args.itemId && log.args.name && log.args.priceMinor !== undefined && log.args.category ? [{ id: log.args.itemId, name: log.args.name, priceMinor: log.args.priceMinor, category: log.args.category }] : []);
       setCatalogue(items);
       if (!silent) toast.success(items.length ? `${items.length} item${items.length === 1 ? "" : "s"} loaded` : "No items found for this merchant.");
@@ -625,6 +767,7 @@ export default function Home() {
       setView("pay");
       window.history.pushState(null, "", `${url.pathname}${url.search}`);
       navigator.clipboard?.writeText(url.toString()).then(() => toast.success("Checkout link copied to clipboard!"));
+      refreshAfterContractWrite();
     }
     catch (error) { toast.error(getErrMsg(error, "Could not create checkout")); }
     finally { setBusy(false); }
@@ -650,6 +793,7 @@ export default function Home() {
       }
       toast.success(`Payment settled: ${hash.slice(0, 10)}…`);
       setPaidReceipt(hash);
+      refreshAfterContractWrite();
     } catch (error) { toast.error(getErrMsg(error, "Payment failed")); }
     finally { setBusy(false); }
   }
@@ -704,13 +848,16 @@ export default function Home() {
           transition={{ duration: 0.2 }}
         >
           {view === "merchant" && (
-            isCheckingMerchant ? (
-              <div className="empty-state" style={{ minHeight: 'auto', padding: '40px 20px' }}>
-                <p>Checking your merchant profile…</p>
-              </div>
-            ) : (
-              <form className="form-grid" onSubmit={registerMerchant}><Field label="Business name"><input value={merchantName} onChange={(e) => setMerchantName(e.target.value)} placeholder="My Store" required/></Field><Field label="Owner name"><input value={ownerName} onChange={(e) => setOwnerName(e.target.value)} placeholder="Your name" required/></Field><div className="full-width"><Field label="Location"><input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="City, Country" required/></Field></div><div className="full-width"><Field label="Settlement wallet address"><input value={settlementAddressInput} onChange={(e) => setSettlementAddressInput(e.target.value)} placeholder="0x..." required/></Field></div><div className="full-width register-submit-container"><button className="register-submit-btn" disabled={busy}>{busy ? "Submitting…" : "Submit"}</button></div></form>
-            )
+            <form className="form-grid" onSubmit={registerMerchant}>
+              {isCheckingMerchant && (
+                <div className="full-width" style={{ marginBottom: "4px" }}>
+                  <div style={{ border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.82)", borderRadius: "14px", padding: "12px 14px", fontSize: "14px" }}>
+                    Checking for an existing merchant profile. You can review the form while verification finishes.
+                  </div>
+                </div>
+              )}
+              <Field label="Business name"><input value={merchantName} onChange={(e) => setMerchantName(e.target.value)} placeholder="My Store" required/></Field><Field label="Owner name"><input value={ownerName} onChange={(e) => setOwnerName(e.target.value)} placeholder="Your name" required/></Field><div className="full-width"><Field label="Location"><input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="City, Country" required/></Field></div><div className="full-width"><Field label="Settlement wallet address"><input value={settlementAddressInput} onChange={(e) => setSettlementAddressInput(e.target.value)} placeholder="0x..." required/></Field></div><div className="full-width register-submit-container"><button className="register-submit-btn" disabled={busy || isCheckingMerchant}>{isCheckingMerchant ? "Checking existing profile…" : busy ? "Submitting…" : "Submit"}</button></div>
+            </form>
           )}
           {view === "asset" && (
             <div className="asset-view-container">
@@ -973,7 +1120,7 @@ export default function Home() {
             <div className="payment-history-header">
               <button type="button" className="primary-button" onClick={loadPaymentHistory} disabled={isLoadingPaymentHistory}>{isLoadingPaymentHistory ? "Loading…" : "Refresh"}</button>
             </div>
-            {isLoadingPaymentHistory ? <div className="empty-state payment-history-empty"><p>Loading payment history…</p></div> : paymentHistory.length === 0 ? <div className="empty-state payment-history-empty"><p>No checkouts created yet.</p></div> : <div className="payment-history-table">
+            {isLoadingPaymentHistory ? <div className="payment-history-empty"><p>Loading payment history…</p></div> : paymentHistory.length === 0 ? <div className="payment-history-empty"><p>No checkouts created yet.</p></div> : <div className="payment-history-table">
               <div className="payment-history-row payment-history-head"><span>Checkout</span><span>Amount</span><span>Asset</span><span>Status</span></div>
               {paymentHistory.map((entry) => {
                 const assetDefinition = SUPPORTED_ASSETS.find((item) => item.address.toLowerCase() === entry.asset.toLowerCase());

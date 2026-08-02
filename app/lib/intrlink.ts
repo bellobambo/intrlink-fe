@@ -8,8 +8,8 @@ import {
 } from "viem";
 import type { Chain } from "viem/chains";
 
-export const intrlinkAddress = "0x31425BdcBcbEAFa6A9DB437798967bb8571eC3C0" as const;
-export const intrlinkDeploymentBlock = BigInt(33515793);
+export const intrlinkAddress = "0x2b7f7552E3B5902c2d1dAE65664ABE93F9d45795" as const;
+export const intrlinkDeploymentBlock = BigInt(33539845);
 
 export const flareCoston2: Chain = {
   id: 114,
@@ -25,7 +25,10 @@ export const flareCoston2: Chain = {
 };
 
 export const intrlinkAbi = [
+  { type: "error", name: "MerchantAlreadyExists", inputs: [{ name: "merchantId", type: "bytes32" }] },
   { type: "function", name: "getMerchant", stateMutability: "view", inputs: [{ name: "merchantId", type: "bytes32" }], outputs: [{ type: "tuple", components: [{ name: "owner", type: "address" }, { name: "settlementAddress", type: "address" }, { name: "companyName", type: "string" }, { name: "ownerName", type: "string" }, { name: "location", type: "string" }, { name: "exists", type: "bool" }] }] },
+  { type: "function", name: "getMerchantIdByOwner", stateMutability: "view", inputs: [{ name: "owner", type: "address" }], outputs: [{ type: "bytes32" }] },
+  { type: "function", name: "getMerchantByOwner", stateMutability: "view", inputs: [{ name: "owner", type: "address" }], outputs: [{ type: "tuple", components: [{ name: "owner", type: "address" }, { name: "settlementAddress", type: "address" }, { name: "companyName", type: "string" }, { name: "ownerName", type: "string" }, { name: "location", type: "string" }, { name: "exists", type: "bool" }] }] },
   { type: "function", name: "getPaymentIntent", stateMutability: "view", inputs: [{ name: "intentId", type: "bytes32" }], outputs: [{ type: "tuple", components: [{ name: "merchantId", type: "bytes32" }, { name: "itemId", type: "bytes32" }, { name: "merchantOwner", type: "address" }, { name: "settlementAddress", type: "address" }, { name: "asset", type: "address" }, { name: "fiatAmountMinor", type: "uint128" }, { name: "requiredAssetAmount", type: "uint128" }, { name: "quotedAt", type: "uint64" }, { name: "expiresAt", type: "uint64" }, { name: "metadataHash", type: "bytes32" }, { name: "status", type: "uint8" }] }] },
   { type: "function", name: "registerMerchant", stateMutability: "nonpayable", inputs: [{ name: "merchantId", type: "bytes32" }, { name: "settlementAddress", type: "address" }, { name: "companyName", type: "string" }, { name: "ownerName", type: "string" }, { name: "location", type: "string" }], outputs: [] },
   { type: "function", name: "addAsset", stateMutability: "nonpayable", inputs: [{ name: "merchantId", type: "bytes32" }, { name: "asset", type: "address" }, { name: "feedId", type: "bytes21" }, { name: "tokenDecimals", type: "uint8" }, { name: "feedDecimals", type: "uint8" }], outputs: [] },

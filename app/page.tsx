@@ -7,6 +7,7 @@ import { Drawer, QRCode } from "antd";
 import { ShopOutlined, WalletOutlined, AppstoreOutlined, ShoppingCartOutlined, CreditCardOutlined, DeleteOutlined } from "@ant-design/icons";
 import { motion, AnimatePresence } from "framer-motion";
 import toast, { Toaster } from "react-hot-toast";
+import Link from "next/link";
 
 
 const CONTRACT_ERROR_MESSAGES: Record<string, string> = {
@@ -46,6 +47,7 @@ const SUPPORTED_ASSETS = [
     feedDecimals: 8,
     description: "Native gas token of Coston2 testnet",
   },
+  /*
   {
     symbol: "USDC",
     name: "USD Coin",
@@ -55,6 +57,7 @@ const SUPPORTED_ASSETS = [
     feedDecimals: 8,
     description: "USD-pegged stablecoin",
   },
+  */
   {
     symbol: "USDT",
     name: "Tether USD",
@@ -64,6 +67,7 @@ const SUPPORTED_ASSETS = [
     feedDecimals: 8,
     description: "Tether USD stablecoin",
   },
+  /*
   {
     symbol: "WETH",
     name: "Wrapped Ether",
@@ -82,6 +86,7 @@ const SUPPORTED_ASSETS = [
     feedDecimals: 8,
     description: "Trustless bridged asset",
   },
+  */
   {
     symbol: "FXRP",
     name: "XRP Token",
@@ -91,6 +96,7 @@ const SUPPORTED_ASSETS = [
     feedDecimals: 8,
     description: "XRP bridged to Flare",
   },
+  /*
   {
     symbol: "FBTC",
     name: "Bitcoin (FAsset)",
@@ -109,6 +115,7 @@ const SUPPORTED_ASSETS = [
     feedDecimals: 8,
     description: "Dogecoin bridged to Flare",
   },
+  */
 ] as const;
 
 type SupportedAsset = typeof SUPPORTED_ASSETS[number];
@@ -809,7 +816,7 @@ export default function Home() {
     setView(merchantId ? "checkout" : "merchant");
   }
 
-  if (!account) return <main className="landing" id="top"><nav className="navbar"><Brand/><button className="connect-button" onClick={connectWallet} disabled={busy}>{busy ? "Connecting…" : "Connect wallet"}</button></nav><section className="empty-state"><span className="eyebrow">ON-CHAIN PAYMENTS, MADE SIMPLE</span><h1>Accept crypto.<br/><em>Keep your price in USD.</em></h1><p>Set up your catalogue, create a checkout, and receive payment directly in your wallet.</p><button className="primary-button large" onClick={connectWallet} disabled={busy}>{busy ? "Connecting…" : "Connect wallet"}</button></section><Toaster position="bottom-right" /></main>;
+  if (!account) return <main className="landing" id="top"><nav className="navbar"><Brand/><button className="connect-button" onClick={connectWallet} disabled={busy}>{busy ? "Connecting…" : "Connect wallet"}</button></nav><section className="empty-state"><span className="eyebrow">ON-CHAIN PAYMENTS, MADE SIMPLE</span><h1>Accept crypto.<br/><em>Keep your price in USD.</em></h1><p>Set up your catalogue, create a checkout, and receive payment directly in your wallet.</p><Link href="/docs" className="primary-button large" style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>Documentation</Link></section><Toaster position="bottom-right" /></main>;
 
   const cartItemsList = catalogue.filter(item => cart[item.id] > 0);
   const totalAmount = cartItemsList.reduce((acc, item) => acc + (Number(item.priceMinor)/100) * cart[item.id], 0);
@@ -919,7 +926,7 @@ export default function Home() {
                             <span className="asset-row-badges">
                               {assetPrices[a.symbol] && (
                                 <span style={{ color: '#1b5e20', fontSize: '12px', marginRight: '8px', fontWeight: 600 }}>
-                                  ${assetPrices[a.symbol].toFixed(a.symbol === 'WETH' ? 2 : (a.symbol === 'C2FLR' ? 4 : 2))}
+                                  ${assetPrices[a.symbol].toFixed(a.symbol === 'C2FLR' ? 4 : 2)}
                                 </span>
                               )}
                               {a.symbol === "C2FLR" && <span className="asset-meta-badge asset-meta-native">Native</span>}

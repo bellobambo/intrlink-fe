@@ -93,8 +93,8 @@ Provide concise, helpful answers. Use markdown for formatting. If the user asks 
           width: "56px",
           height: "56px",
           borderRadius: "28px",
-          backgroundColor: "var(--brand)",
-          color: "black",
+          backgroundColor: "var(--forest)",
+          color: "white",
           border: "none",
           boxShadow: "0 8px 24px rgba(0,0,0,0.3)",
           display: isOpen ? "none" : "flex",
@@ -117,8 +117,8 @@ Provide concise, helpful answers. Use markdown for formatting. If the user asks 
           width: "380px",
           height: "600px",
           maxHeight: "80vh",
-          backgroundColor: "var(--bg-card)",
-          border: "1px solid var(--border)",
+          backgroundColor: "white",
+          border: "1px solid var(--line)",
           borderRadius: "16px",
           boxShadow: "0 12px 48px rgba(0,0,0,0.5)",
           display: "flex",
@@ -128,14 +128,14 @@ Provide concise, helpful answers. Use markdown for formatting. If the user asks 
         }}>
           <div style={{
             padding: "16px",
-            borderBottom: "1px solid var(--border)",
+            borderBottom: "1px solid var(--line)",
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
             background: "linear-gradient(90deg, rgba(39,244,209,0.1) 0%, rgba(0,0,0,0) 100%)"
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <div style={{ background: "var(--brand)", color: "black", width: "32px", height: "32px", borderRadius: "16px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ background: "var(--forest)", color: "white", width: "32px", height: "32px", borderRadius: "16px", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <RobotOutlined />
               </div>
               <div>
@@ -145,7 +145,7 @@ Provide concise, helpful answers. Use markdown for formatting. If the user asks 
             </div>
             <button 
               onClick={() => setIsOpen(false)}
-              style={{ background: "transparent", border: "none", color: "var(--fg)", cursor: "pointer", opacity: 0.6, padding: "8px" }}
+              style={{ background: "transparent", border: "none", color: "var(--ink)", cursor: "pointer", opacity: 0.6, padding: "8px" }}
             >
               <CloseOutlined />
             </button>
@@ -163,8 +163,8 @@ Provide concise, helpful answers. Use markdown for formatting. If the user asks 
               <div key={idx} style={{
                 alignSelf: msg.role === "user" ? "flex-end" : "flex-start",
                 maxWidth: "85%",
-                backgroundColor: msg.role === "user" ? "var(--brand)" : "rgba(255,255,255,0.05)",
-                color: msg.role === "user" ? "black" : "var(--fg)",
+                backgroundColor: msg.role === "user" ? "var(--forest)" : "var(--mint)",
+                color: msg.role === "user" ? "white" : "var(--ink)",
                 padding: "12px 16px",
                 borderRadius: "12px",
                 borderBottomRightRadius: msg.role === "user" ? "4px" : "12px",
@@ -191,7 +191,7 @@ Provide concise, helpful answers. Use markdown for formatting. If the user asks 
 
           <form onSubmit={sendMessage} style={{
             padding: "16px",
-            borderTop: "1px solid var(--border)",
+            borderTop: "1px solid var(--line)",
             display: "flex",
             gap: "8px"
           }}>
@@ -202,11 +202,11 @@ Provide concise, helpful answers. Use markdown for formatting. If the user asks 
               placeholder="Ask about your sales..."
               style={{
                 flex: 1,
-                background: "rgba(255,255,255,0.05)",
-                border: "1px solid var(--border)",
+                background: "var(--mint)",
+                border: "1px solid var(--line)",
                 borderRadius: "8px",
                 padding: "10px 14px",
-                color: "var(--fg)",
+                color: "var(--ink)",
                 outline: "none"
               }}
             />
@@ -214,8 +214,8 @@ Provide concise, helpful answers. Use markdown for formatting. If the user asks 
               type="submit"
               disabled={isLoading || !input.trim()}
               style={{
-                background: "var(--brand)",
-                color: "black",
+                background: "var(--forest)",
+                color: "white",
                 border: "none",
                 borderRadius: "8px",
                 width: "42px",

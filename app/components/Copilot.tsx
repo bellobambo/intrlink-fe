@@ -31,7 +31,7 @@ Current Wallet C2FLR Balance: ${balance || "Unknown"}
 Live Crypto Prices (USD):
 ${Object.entries(assetPrices).map(([sym, price]) => `- ${sym}: $${price}`).join("\n")}
 Recent Payment History (JSON format):
-${JSON.stringify(paymentHistory.slice(0, 50))}
+${JSON.stringify(paymentHistory.slice(0, 50), (key, value) => typeof value === 'bigint' ? value.toString() : value)}
 
 Provide concise, helpful answers. Use markdown for formatting. If the user asks for a sales summary, calculate totals from the payment history.`;
 

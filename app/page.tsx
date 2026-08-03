@@ -821,7 +821,7 @@ export default function Home() {
         try {
           const decoded = decodeEventLog({ abi: [paymentIntentCreatedEvent], data: log.data, topics: log.topics });
           if ((decoded.args as any).intentId) {
-            intentIds.push({ id: (decoded.args as any).intentId, createdAt: BigInt(log.blockNumber), txHash: log.transactionHash });
+            intentIds.push({ id: (decoded.args as any).intentId, createdAt: BigInt(log.timeStamp || log.blockNumber), txHash: log.transactionHash });
           }
         } catch(e) {}
       }
@@ -1213,7 +1213,7 @@ export default function Home() {
               <button type="button" className="primary-button" onClick={loadPaymentHistory} disabled={isLoadingPaymentHistory}>{isLoadingPaymentHistory ? "Loading…" : "Refresh"}</button>
             </div>
             {isLoadingPaymentHistory ? <div className="payment-history-empty"><p>Loading payment history…</p></div> : paymentHistory.length === 0 ? <div className="payment-history-empty"><p>No checkouts created yet.</p></div> : <div className="payment-history-table">
-              <div className="payment-history-row payment-history-head"><span>Checkout</span><span>Amount</span><span>Asset</span><span>Status</span></div>
+              <div className="payment-history-row payment-history-head"><span>Checkout</span><span>Date</span><span>Amount</span><span>Asset</span><span>Status</span></div>
               {paymentHistory.map((entry) => {
                 const assetDefinition = SUPPORTED_ASSETS.find((item) => item.address.toLowerCase() === entry.asset.toLowerCase());
                 const status = paymentStatus(entry.status, entry.expiresAt);
@@ -1225,6 +1225,7 @@ export default function Home() {
                   ) : (
                     <span className="payment-id">{entry.id.slice(0, 10)}…{entry.id.slice(-6)}</span>
                   )}
+                  <span className="payment-date">{new Date(Number(entry.createdAt) * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                   <strong>${(Number(entry.fiatAmountMinor) / 100).toFixed(2)}</strong>
                   <span>{assetDefinition?.symbol ?? "Unknown"}</span>
                   <span className={`payment-status payment-status-${status.toLowerCase()}`}>{status}</span>

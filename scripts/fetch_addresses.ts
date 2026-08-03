@@ -1,8 +1,8 @@
 import { createPublicClient, http } from "viem";
-import { flareCoston2 } from "viem/chains";
+import { flareTestnet } from "viem/chains";
 
 const publicClient = createPublicClient({
-  chain: flareCoston2,
+  chain: flareTestnet,
   transport: http("https://coston2-api.flare.network/ext/C/rpc"),
 });
 
@@ -22,7 +22,7 @@ const registryAbi = [
     outputs: [{ type: "string[]", name: "" }, { type: "address[]", name: "" }],
     stateMutability: "view",
   }
-];
+] as const;
 
 async function main() {
   try {

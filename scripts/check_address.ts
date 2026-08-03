@@ -13,6 +13,6 @@ for (const a of addrs) {
     const checksummed = getAddress(a.toLowerCase());
     console.log(a, "-> valid:", valid, "-> checksummed:", checksummed);
   } catch (e) {
-    console.log(a, "-> ERROR:", e.message);
+    console.log(a, "-> ERROR:", (e as Error).message);
   }
 }

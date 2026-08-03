@@ -1,7 +1,7 @@
 const { createPublicClient, http } = require("viem");
-const { flareCoston2 } = require("viem/chains");
+const { flareTestnet } = require("viem/chains");
 
-const indexerClient = createPublicClient({ chain: flareCoston2, transport: http("https://coston2-explorer.flare.network/api/eth-rpc") });
+const indexerClient = createPublicClient({ chain: flareTestnet, transport: http("https://coston2-explorer.flare.network/api/eth-rpc") });
 
 async function run() {
   try {

@@ -271,13 +271,13 @@ button:disabled {
 }
 
 .navbar {
-  height: 64px;
+  min-height: 72px;
   background: var(--forest);
   box-shadow: 0 2px 8px #103d1530;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 40px;
+  padding: 12px 40px;
 }
 
 .nav-inner {

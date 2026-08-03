@@ -25,7 +25,36 @@ export const flareCoston2: Chain = {
 };
 
 export const intrlinkAbi = [
+  { type: "error", name: "Unauthorized", inputs: [{ name: "expected", type: "bytes32" }, { name: "actual", type: "address" }] },
+  { type: "error", name: "ZeroAddress", inputs: [] },
+  { type: "error", name: "InvalidMerchant", inputs: [] },
+  { type: "error", name: "InvalidMerchantProfile", inputs: [] },
   { type: "error", name: "MerchantAlreadyExists", inputs: [{ name: "merchantId", type: "bytes32" }] },
+  { type: "error", name: "InvalidSettlementAddress", inputs: [] },
+  { type: "error", name: "InvalidIntent", inputs: [] },
+  { type: "error", name: "IntentAlreadyExists", inputs: [{ name: "intentId", type: "bytes32" }] },
+  { type: "error", name: "InvalidFiatAmount", inputs: [] },
+  { type: "error", name: "InvalidItem", inputs: [{ name: "itemId", type: "bytes32" }] },
+  { type: "error", name: "InvalidItemDetails", inputs: [] },
+  { type: "error", name: "InvalidQuantity", inputs: [] },
+  { type: "error", name: "EmptyCart", inputs: [] },
+  { type: "error", name: "DuplicateCartItem", inputs: [{ name: "itemId", type: "bytes32" }] },
+  { type: "error", name: "ItemAlreadyExists", inputs: [{ name: "itemId", type: "bytes32" }] },
+  { type: "error", name: "AssetAlreadyExists", inputs: [{ name: "asset", type: "address" }] },
+  { type: "error", name: "EmptyAssetBatch", inputs: [] },
+  { type: "error", name: "UnsupportedAsset", inputs: [{ name: "asset", type: "address" }] },
+  { type: "error", name: "InvalidDecimals", inputs: [] },
+  { type: "error", name: "InvalidQuoteExpiry", inputs: [] },
+  { type: "error", name: "InvalidOraclePrice", inputs: [] },
+  { type: "error", name: "OracleDecimalsMismatch", inputs: [{ name: "expected", type: "uint8" }, { name: "actual", type: "int8" }] },
+  { type: "error", name: "StaleOraclePrice", inputs: [{ name: "timestamp", type: "uint64" }, { name: "current", type: "uint64" }] },
+  { type: "error", name: "IntentNotPayable", inputs: [{ name: "intentId", type: "bytes32" }, { name: "status", type: "uint8" }] },
+  { type: "error", name: "IntentExpired", inputs: [{ name: "intentId", type: "bytes32" }] },
+  { type: "error", name: "IncorrectNativeAmount", inputs: [{ name: "expected", type: "uint256" }, { name: "actual", type: "uint256" }] },
+  { type: "error", name: "NativeTransferFailed", inputs: [] },
+  { type: "error", name: "TokenTransferFailed", inputs: [] },
+  { type: "error", name: "ContractPaused", inputs: [] },
+  { type: "error", name: "ReentrantCall", inputs: [] },
   { type: "function", name: "getMerchant", stateMutability: "view", inputs: [{ name: "merchantId", type: "bytes32" }], outputs: [{ type: "tuple", components: [{ name: "owner", type: "address" }, { name: "settlementAddress", type: "address" }, { name: "companyName", type: "string" }, { name: "ownerName", type: "string" }, { name: "location", type: "string" }, { name: "exists", type: "bool" }] }] },
   { type: "function", name: "getMerchantIdByOwner", stateMutability: "view", inputs: [{ name: "owner", type: "address" }], outputs: [{ type: "bytes32" }] },
   { type: "function", name: "getMerchantByOwner", stateMutability: "view", inputs: [{ name: "owner", type: "address" }], outputs: [{ type: "tuple", components: [{ name: "owner", type: "address" }, { name: "settlementAddress", type: "address" }, { name: "companyName", type: "string" }, { name: "ownerName", type: "string" }, { name: "location", type: "string" }, { name: "exists", type: "bool" }] }] },
@@ -106,7 +135,23 @@ export const assetEnabledEvent = {
   ],
 } as const;
 
+export const paymentIntentCreatedEvent = {
+  type: "event",
+  name: "PaymentIntentCreated",
+  inputs: [
+    { name: "intentId", type: "bytes32", indexed: true },
+    { name: "merchantId", type: "bytes32", indexed: true },
+    { name: "itemId", type: "bytes32", indexed: true },
+    { name: "asset", type: "address", indexed: false },
+    { name: "fiatAmountMinor", type: "uint256", indexed: false },
+    { name: "requiredAssetAmount", type: "uint256", indexed: false },
+    { name: "expiresAt", type: "uint64", indexed: false },
+    { name: "metadataHash", type: "bytes32", indexed: false },
+  ],
+} as const;
+
 export const erc20Abi = [
+  { type: "function", name: "balanceOf", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ type: "uint256" }] },
   { type: "function", name: "allowance", stateMutability: "view", inputs: [{ name: "owner", type: "address" }, { name: "spender", type: "address" }], outputs: [{ type: "uint256" }] },
   { type: "function", name: "approve", stateMutability: "nonpayable", inputs: [{ name: "spender", type: "address" }, { name: "amount", type: "uint256" }], outputs: [{ type: "bool" }] },
 ] as const;

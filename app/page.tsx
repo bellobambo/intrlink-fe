@@ -1,8 +1,8 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { isAddress, keccak256, stringToHex, zeroAddress, type Address, type Hex } from "viem";
-import { connectCoston2, erc20Abi, getProvider, intrlinkAbi, intrlinkAddress, intrlinkDeploymentBlock, itemAddedEvent, assetEnabledEvent, publicClient, indexerClient, walletClient } from "./lib/intrlink";
+import { isAddress, keccak256, stringToHex, zeroAddress, decodeEventLog, type Address, type Hex } from "viem";
+import { connectCoston2, erc20Abi, getProvider, intrlinkAbi, intrlinkAddress, intrlinkDeploymentBlock, itemAddedEvent, assetEnabledEvent, paymentIntentCreatedEvent, publicClient, indexerClient, walletClient } from "./lib/intrlink";
 import { Drawer, QRCode } from "antd";
 import { ShopOutlined, WalletOutlined, AppstoreOutlined, ShoppingCartOutlined, CreditCardOutlined, DeleteOutlined } from "@ant-design/icons";
 import { motion, AnimatePresence } from "framer-motion";
@@ -16,6 +16,7 @@ const CONTRACT_ERROR_MESSAGES: Record<string, string> = {
   "0xe7ecdcfd": "This checkout is no longer payable. It may already be paid, cancelled, or expired.",
   "0x5693fffb": "The wallet did not send the exact amount required for this checkout.",
   "0xee84f40b": "The payment asset is not available for this checkout.",
+  "0x33add252": "Oracle price feed decimals mismatch. Please re-enable the asset with the correct decimals.",
 };
 
 function getErrMsg(err: unknown, fallback: string) {
@@ -54,7 +55,7 @@ const SUPPORTED_ASSETS = [
     address: "0x8c0803566113B246abe776a31C5EE2Ce61D1F222" as Address, // Coston2 Test USDC
     feedId: "0x01555344432f55534400000000000000000000000000".slice(0, 44) as Hex, // USDC/USD — padded to bytes21
     tokenDecimals: 6,
-    feedDecimals: 8,
+    feedDecimals: 6,
     description: "USD-pegged stablecoin",
   },
   */
@@ -64,7 +65,7 @@ const SUPPORTED_ASSETS = [
     address: "0xDF64D7BfeDf0100177d9276f83cF279093077b29" as Address, // Coston2 Test USDT (USDT0)
     feedId: "0x01555344542f55534400000000000000000000000000".slice(0, 44) as Hex, // USDT/USD
     tokenDecimals: 6,
-    feedDecimals: 8,
+    feedDecimals: 6,
     description: "Tether USD stablecoin",
   },
   /*
@@ -74,7 +75,7 @@ const SUPPORTED_ASSETS = [
     address: "0x742E38637aD924117e39D6354C1ec81CED5872a6" as Address, // Coston2 Mock WETH
     feedId: "0x014554482f55534400000000000000000000000000" as Hex, // ETH/USD
     tokenDecimals: 18,
-    feedDecimals: 8,
+    feedDecimals: 3,
     description: "Ethereum on Flare",
   },
   {
@@ -90,10 +91,10 @@ const SUPPORTED_ASSETS = [
   {
     symbol: "FXRP",
     name: "XRP Token",
-    address: "0x0B847167664c3917f44738734262b8813C9a3dC7" as Address, // Coston2 FTestXRP
+    address: "0x0b6A3645c240605887a5532109323A3E12273dc7" as Address, // Coston2 FTestXRP
     feedId: "0x015852502f55534400000000000000000000000000" as Hex, // XRP/USD
     tokenDecimals: 6,
-    feedDecimals: 8,
+    feedDecimals: 6,
     description: "XRP bridged to Flare",
   },
   /*
@@ -103,7 +104,7 @@ const SUPPORTED_ASSETS = [
     address: "0x1111111111111111111111111111111111111111" as Address, // Placeholder Address
     feedId: "0x014254432f55534400000000000000000000000000" as Hex, // BTC/USD
     tokenDecimals: 8,
-    feedDecimals: 8,
+    feedDecimals: 2,
     description: "Bitcoin bridged to Flare",
   },
   {
@@ -112,7 +113,7 @@ const SUPPORTED_ASSETS = [
     address: "0x2222222222222222222222222222222222222222" as Address, // Placeholder Address
     feedId: "0x01444f47452f555344000000000000000000000000" as Hex, // DOGE/USD
     tokenDecimals: 8,
-    feedDecimals: 8,
+    feedDecimals: 6,
     description: "Dogecoin bridged to Flare",
   },
   */
@@ -126,7 +127,7 @@ type PaymentDetails = { merchantId: Hex; asset: Address; fiatAmountMinor: bigint
 type PaymentLine = { id: Hex; name: string; quantity: bigint; unitPriceMinor: bigint };
 type PaymentHistoryEntry = PaymentDetails & { id: Hex; createdAt: bigint };
 
-const LOG_BLOCK_RANGE = BigInt(30);
+const LOG_BLOCK_RANGE = BigInt(10000);
 const PAYMENT_INTENT_CREATED_TOPIC = keccak256(stringToHex("PaymentIntentCreated(bytes32,bytes32,bytes32,address,uint256,uint256,uint64,bytes32)"));
 const MERCHANT_PROFILE_CACHE_PREFIX = "intrlink:merchant-profile:";
 
@@ -214,6 +215,7 @@ function Brand() {
 export default function Home() {
   const [account, setAccount] = useState<Address>();
   const [balance, setBalance] = useState<string | null>(null);
+  const [fxrpBalance, setFxrpBalance] = useState<string | null>(null);
   const [view, setView] = useState<View>("merchant");
   const [busy, setBusy] = useState(false);
   const [isCheckingMerchant, setIsCheckingMerchant] = useState(false);
@@ -342,10 +344,20 @@ export default function Home() {
   useEffect(() => {
     if (!account) {
       setBalance(null);
+      setFxrpBalance(null);
       return;
     }
     publicClient.getBalance({ address: account }).then(bal => {
       setBalance((Number(bal) / 1e18).toFixed(2));
+    }).catch(console.error);
+
+    publicClient.readContract({
+      address: "0x0b6A3645c240605887a5532109323A3E12273dc7",
+      abi: erc20Abi,
+      functionName: "balanceOf",
+      args: [account]
+    }).then((bal) => {
+      setFxrpBalance((Number(bal) / 1e18).toFixed(2));
     }).catch(console.error);
   }, [account]);
 
@@ -698,8 +710,19 @@ export default function Home() {
   async function loadEnabledAssets(silent = false) {
     if (!merchantId) return;
     try {
-      const logs = await indexerClient.getLogs({ address: intrlinkAddress, event: assetEnabledEvent, args: { merchantId }, fromBlock: intrlinkDeploymentBlock });
-      const assetAddresses = logs.flatMap((log) => log.args.asset ? [log.args.asset] : []);
+      const topic0 = keccak256(stringToHex("AssetEnabled(bytes32,address,bytes21,uint8,uint8)"));
+      const url = `https://coston2-explorer.flare.network/api?module=logs&action=getLogs&address=${intrlinkAddress}&fromBlock=${intrlinkDeploymentBlock}&toBlock=latest&topic0=${topic0}&topic0_1_opr=and&topic1=${merchantId}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.status !== "1" && data.message !== "No records found") throw new Error(data.message || "Failed to fetch logs");
+      
+      const logs = data.result || [];
+      const assetAddresses = logs.flatMap((log: any) => {
+        try {
+          const decoded = decodeEventLog({ abi: [assetEnabledEvent], data: log.data, topics: log.topics });
+          return (decoded.args as any).asset ? [(decoded.args as any).asset] : [];
+        } catch(e) { return []; }
+      });
       const uniqueAssets = Array.from(new Set(assetAddresses));
       setEnabledAssetsList(uniqueAssets as Address[]);
     } catch (error) {
@@ -711,8 +734,20 @@ export default function Home() {
     if (!merchantId) return !silent && toast.error("Enter a merchant ID first.");
     try {
       setBusy(true);
-      const logs = await indexerClient.getLogs({ address: intrlinkAddress, event: itemAddedEvent, args: { merchantId }, fromBlock: intrlinkDeploymentBlock });
-      const items = logs.flatMap((log) => log.args.itemId && log.args.name && log.args.priceMinor !== undefined && log.args.category ? [{ id: log.args.itemId, name: log.args.name, priceMinor: log.args.priceMinor, category: log.args.category }] : []);
+      const topic0 = keccak256(stringToHex("ItemAdded(bytes32,bytes32,string,uint256,string)"));
+      const url = `https://coston2-explorer.flare.network/api?module=logs&action=getLogs&address=${intrlinkAddress}&fromBlock=${intrlinkDeploymentBlock}&toBlock=latest&topic0=${topic0}&topic0_1_opr=and&topic1=${merchantId}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.status !== "1" && data.message !== "No records found") throw new Error(data.message || "Failed to fetch logs");
+      
+      const logs = data.result || [];
+      const items = logs.flatMap((log: any) => {
+        try {
+          const decoded = decodeEventLog({ abi: [itemAddedEvent], data: log.data, topics: log.topics });
+          const args = decoded.args as any;
+          return args.itemId && args.name && args.priceMinor !== undefined && args.category ? [{ id: args.itemId, name: args.name, priceMinor: args.priceMinor, category: args.category }] : [];
+        } catch(e) { return []; }
+      });
       setCatalogue(items);
       if (!silent) toast.success(items.length ? `${items.length} item${items.length === 1 ? "" : "s"} loaded` : "No items found for this merchant.");
     } catch (error) { if (!silent) toast.error(getErrMsg(error, "Could not load catalogue")); }
@@ -723,29 +758,26 @@ export default function Home() {
     if (!merchantId) return;
     try {
       setIsLoadingPaymentHistory(true);
-      const latestBlock = await publicClient.getBlockNumber();
-      const intentIds: { id: Hex; createdAt: bigint }[] = [];
-
-      // IntrLink has no merchant-intent enumeration getter. The contract emits
-      // PaymentIntentCreated(intentId, merchantId, ...) for every checkout, so
-      // use that lifecycle event as the merchant's history index.
-      for (let toBlock = latestBlock; toBlock >= intrlinkDeploymentBlock;) {
-        const fromBlock = toBlock - (LOG_BLOCK_RANGE - BigInt(1)) > intrlinkDeploymentBlock
-          ? toBlock - (LOG_BLOCK_RANGE - BigInt(1))
-          : intrlinkDeploymentBlock;
-        const logs = await publicClient.getLogs({ address: intrlinkAddress, fromBlock, toBlock });
-        for (const log of logs) {
-          if (log.topics[0] === PAYMENT_INTENT_CREATED_TOPIC && log.topics[2]?.toLowerCase() === merchantId.toLowerCase() && log.topics[1]) {
-            intentIds.push({ id: log.topics[1] as Hex, createdAt: log.blockNumber ?? fromBlock });
+      const intentIds: { id: Hex; createdAt: bigint; txHash: string }[] = [];
+      const topic0 = keccak256(stringToHex("PaymentIntentCreated(bytes32,bytes32,bytes32,address,uint256,uint256,uint64,bytes32)"));
+      const url = `https://coston2-explorer.flare.network/api?module=logs&action=getLogs&address=${intrlinkAddress}&fromBlock=${intrlinkDeploymentBlock}&toBlock=latest&topic0=${topic0}&topic0_2_opr=and&topic2=${merchantId}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.status !== "1" && data.message !== "No records found") throw new Error(data.message || "Failed to fetch logs");
+      
+      const logs = data.result || [];
+      for (const log of logs) {
+        try {
+          const decoded = decodeEventLog({ abi: [paymentIntentCreatedEvent], data: log.data, topics: log.topics });
+          if ((decoded.args as any).intentId) {
+            intentIds.push({ id: (decoded.args as any).intentId, createdAt: BigInt(log.blockNumber), txHash: log.transactionHash });
           }
-        }
-        if (fromBlock === intrlinkDeploymentBlock) break;
-        toBlock = fromBlock - BigInt(1);
+        } catch(e) {}
       }
 
-      const history = await Promise.all(intentIds.map(async ({ id, createdAt }) => {
+      const history = await Promise.all(intentIds.map(async ({ id, createdAt, txHash }) => {
         const intent = await publicClient.readContract({ address: intrlinkAddress, abi: intrlinkAbi, functionName: "getPaymentIntent", args: [id] });
-        return { id, createdAt, merchantId: intent.merchantId, asset: intent.asset, fiatAmountMinor: intent.fiatAmountMinor, requiredAssetAmount: intent.requiredAssetAmount, expiresAt: intent.expiresAt, status: Number(intent.status) };
+        return { id, createdAt, txHash, merchantId: intent.merchantId, asset: intent.asset, fiatAmountMinor: intent.fiatAmountMinor, requiredAssetAmount: intent.requiredAssetAmount, expiresAt: intent.expiresAt, status: Number(intent.status) };
       }));
       setPaymentHistory(history.sort((a, b) => Number(b.createdAt - a.createdAt)));
     } catch (error) {
@@ -773,7 +805,7 @@ export default function Home() {
       setIsShareCheckoutOpen(false);
       setView("pay");
       window.history.pushState(null, "", `${url.pathname}${url.search}`);
-      navigator.clipboard?.writeText(url.toString()).then(() => toast.success("Checkout link copied to clipboard!"));
+      navigator.clipboard?.writeText(url.toString()).then(() => toast.success("Checkout link copied to clipboard!")).catch(() => toast.success("Checkout created successfully"));
       refreshAfterContractWrite();
     }
     catch (error) { toast.error(getErrMsg(error, "Could not create checkout")); }
@@ -842,7 +874,7 @@ export default function Home() {
   </div> : null;
   const totalEarned = paymentHistory.filter((entry) => paymentStatus(entry.status, entry.expiresAt) === "Paid").reduce((total, entry) => total + entry.fiatAmountMinor, BigInt(0));
 
-  return <main className="app" id="top"><nav className="navbar connected-nav"><div className="nav-inner"><div className="nav-identity"><Brand/>{merchantId && merchantName && <span className="merchant-nav-name">{merchantName}</span>}</div>{merchantId && enabledAssetsList.length > 0 && Object.keys(assetPrices).length > 0 && <div className="nav-ticker" style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '13px', color: 'var(--mint)', background: 'rgba(255,255,255,0.1)', padding: '6px 16px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.15)' }}>{SUPPORTED_ASSETS.filter(a => enabledAssetsList.some(ea => ea.toLowerCase() === a.address.toLowerCase())).map(a => { const p = assetPrices[a.symbol]; if (!p) return null; const rate = 1 / p; const formatted = rate < 0.01 ? rate.toPrecision(3) : rate.toFixed(2); return <span key={a.symbol} style={{ fontWeight: 600 }}>{formatted} {a.symbol} / $1</span>; })}</div>}<div className="nav-actions">{merchantId && <button className="merchant-edit-btn" onClick={() => setIsMerchantModalOpen(true)}><ShopOutlined /> <span>Edit Merchant</span></button>}<button className="wallet-chip" onClick={() => navigator.clipboard?.writeText(account).then(() => toast.success("Wallet address copied"))} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 500 }}>{balance !== null && <span style={{ opacity: 0.9 }}>{balance} C2FLR</span>}<span style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.15)', padding: '2px 8px', borderRadius: '12px' }}><WalletOutlined style={{ opacity: 0.7 }} /> <span>{walletLabel}</span> <span>⎘</span></span></button><button className="disconnect-button" onClick={() => { setAccount(undefined); toast.success("Wallet disconnected"); }}>Disconnect</button></div></div></nav><section className="workspace">{view !== "checkout" && <header className="workspace-header"><h1>{view === "merchant" ? "Set up your merchant account" : view === "asset" ? "Choose what you accept" : view === "payments" ? "Payment history" : "Settle a checkout"}</h1><p>{view === "merchant" ? "Your wallet will receive payments directly." : view === "asset" ? "Enable the assets customers can use to pay you." : view === "payments" ? "Track every customer checkout and its on-chain status." : "Enter a payment intent to complete a customer payment."}</p></header>}<div className="view-tabs">{(["merchant", "asset", "checkout", "pay", "payments"] as View[]).filter((item) => !merchantId ? item === "merchant" : item !== "merchant").map((item) => <button className={view === item ? "selected" : ""} onClick={() => { setView(item); if (item === "payments") loadPaymentHistory(); }} key={item}>{item === "merchant" && <ShopOutlined />}{item === "asset" && <WalletOutlined />}{item === "checkout" && <ShoppingCartOutlined />}{(item === "pay" || item === "payments") && <CreditCardOutlined />}<span>{item === "asset" ? "Assets" : item === "checkout" ? "Checkout" : item === "payments" ? "Payments" : item === "pay" ? "Pay" : "Merchant"}</span></button>)}</div>
+  return <main className="app" id="top"><nav className="navbar connected-nav"><div className="nav-inner"><div className="nav-identity"><Brand/>{merchantId && merchantName && <span className="merchant-nav-name">{merchantName}</span>}</div>{merchantId && enabledAssetsList.length > 0 && Object.keys(assetPrices).length > 0 && <div className="nav-ticker" style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '13px', color: 'var(--mint)', background: 'rgba(255,255,255,0.1)', padding: '6px 16px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.15)' }}>{SUPPORTED_ASSETS.filter(a => enabledAssetsList.some(ea => ea.toLowerCase() === a.address.toLowerCase())).map(a => { const p = assetPrices[a.symbol]; if (!p) return null; const rate = 1 / p; const formatted = rate < 0.01 ? rate.toPrecision(3) : rate.toFixed(2); return <span key={a.symbol} style={{ fontWeight: 600 }}>{formatted} {a.symbol} / $1</span>; })}</div>}<div className="nav-actions">{merchantId && <button className="merchant-edit-btn" onClick={() => setIsMerchantModalOpen(true)}><ShopOutlined /> <span>Edit Merchant</span></button>}<button className="wallet-chip" onClick={() => navigator.clipboard?.writeText(account).then(() => toast.success("Wallet address copied")).catch(() => {})} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 500 }}><div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', fontSize: '13px', opacity: 0.9 }}>{balance !== null && <span>{balance} C2FLR</span>}{fxrpBalance !== null && <span style={{ opacity: 0.7 }}>{fxrpBalance} FXRP</span>}</div><span style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.15)', padding: '2px 8px', borderRadius: '12px' }}><WalletOutlined style={{ opacity: 0.7 }} /> <span>{walletLabel}</span> <span>⎘</span></span></button><button className="disconnect-button" onClick={() => { setAccount(undefined); toast.success("Wallet disconnected"); }}>Disconnect</button></div></div></nav><section className="workspace">{view !== "checkout" && <header className="workspace-header"><h1>{view === "merchant" ? "Set up your merchant account" : view === "asset" ? "Choose what you accept" : view === "payments" ? "Payment history" : "Settle a checkout"}</h1><p>{view === "merchant" ? "Your wallet will receive payments directly." : view === "asset" ? "Enable the assets customers can use to pay you." : view === "payments" ? "Track every customer checkout and its on-chain status." : "Enter a payment intent to complete a customer payment."}</p></header>}<div className="view-tabs">{(["merchant", "asset", "checkout", "pay", "payments"] as View[]).filter((item) => !merchantId ? item === "merchant" : item !== "merchant").map((item) => <button className={view === item ? "selected" : ""} onClick={() => { setView(item); if (item === "payments") loadPaymentHistory(); }} key={item}>{item === "merchant" && <ShopOutlined />}{item === "asset" && <WalletOutlined />}{item === "checkout" && <ShoppingCartOutlined />}{(item === "pay" || item === "payments") && <CreditCardOutlined />}<span>{item === "asset" ? "Assets" : item === "checkout" ? "Checkout" : item === "payments" ? "Payments" : item === "pay" ? "Pay" : "Merchant"}</span></button>)}</div>
     {view === "pay" && !isCustomerPaymentView && <button type="button" className="clear-checkout-button" onClick={clearPaymentIntent}>Clear</button>}
     <div className="view-container">
       <AnimatePresence mode="wait">
@@ -982,9 +1014,10 @@ export default function Home() {
                 <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                   {enabledAssetsList.map(a => {
                     const match = SUPPORTED_ASSETS.find(sa => sa.address.toLowerCase() === a.toLowerCase());
+                    if (!match) return null;
                     return (
                       <span key={a} className="asset-pill" style={{ background: "var(--bg-secondary)", border: "1px solid var(--border-color)", opacity: 0.8 }}>
-                        {match ? match.symbol : `${a.slice(0, 6)}…${a.slice(-4)}`}
+                        {match.symbol}
                       </span>
                     );
                   })}
@@ -1028,7 +1061,7 @@ export default function Home() {
                 </div>
               )}
 
-              <Drawer title="Proceed Checkout" placement="right" onClose={() => setIsCartDrawerOpen(false)} open={isCartDrawerOpen} width={420}>
+              <Drawer title="Proceed Checkout" placement="right" onClose={() => setIsCartDrawerOpen(false)} open={isCartDrawerOpen}>
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'space-between' }}>
                   <div style={{ flex: 1, overflowY: 'auto' }}>
                     {cartItemsList.length > 0 ? cartItemsList.map(item => (
@@ -1069,21 +1102,21 @@ export default function Home() {
                   </div>
                 </div>
               </Drawer>
-              <Drawer title="Share checkout" placement="right" onClose={() => setIsShareCheckoutOpen(false)} open={isShareCheckoutOpen} width={420}>
+              <Drawer title="Share checkout" placement="right" onClose={() => setIsShareCheckoutOpen(false)} open={isShareCheckoutOpen}>
                 <div className="share-checkout">
                   <p>Let your customer scan this code or send them the payment link.</p>
                   {checkoutUrl && <QRCode value={checkoutUrl} size={220} style={{ margin: "12px auto 24px", display: "block" }} />}
                   <label className="field-label">Payment link</label>
                   <div className="share-link-row">
                     <input value={checkoutUrl} readOnly aria-label="Payment link" />
-                    <button type="button" className="primary-button" onClick={() => navigator.clipboard?.writeText(checkoutUrl).then(() => toast.success("Payment link copied"))}>Copy</button>
+                    <button type="button" className="primary-button" onClick={() => navigator.clipboard?.writeText(checkoutUrl).then(() => toast.success("Payment link copied")).catch(() => {})}>Copy</button>
                   </div>
                   <p className="hint">The customer sees the itemized order and pays from their own wallet.</p>
                 </div>
               </Drawer>
             </div>
           )}
-          {view === "pay" && !paidReceipt && <form className={`form-grid${isCustomerPaymentView ? " customer-payment-view" : ""}`} onSubmit={payIntent}>
+          {view === "pay" && (!paidReceipt && paymentDetails?.status !== 1) && <form className={`form-grid${isCustomerPaymentView ? " customer-payment-view" : ""}`} onSubmit={payIntent}>
             {isMerchantPayment ? <div className="full-width merchant-payment-grid">
               {paymentDetails && <div className="payment-summary">
                 <p className="eyebrow">PAYMENT REQUEST</p>
@@ -1097,10 +1130,10 @@ export default function Home() {
                 <p className="eyebrow">SHARE WITH CUSTOMER</p>
                 <h2>Payment link ready</h2>
                 <p>Scan the QR code or copy the link to send this order to your customer.</p>
-                {paymentLink && <QRCode value={paymentLink} size={180} style={{ margin: "16px auto", display: "block" }} />}
+                {paymentLink && <div style={{ display: "flex", justifyContent: "center", width: "100%", margin: "16px 0" }}><QRCode type="svg" value={paymentLink} size={256} style={{ maxWidth: "100%", height: "auto" }} /></div>}
                 <div className="share-link-row">
                   <input value={paymentLink} readOnly aria-label="Customer payment link" />
-                  <button type="button" className="primary-button" onClick={() => navigator.clipboard?.writeText(paymentLink).then(() => toast.success("Payment link copied"))}>Copy link</button>
+                  <button type="button" className="primary-button" onClick={() => navigator.clipboard?.writeText(paymentLink).then(() => toast.success("Payment link copied")).catch(() => {})}>Copy link</button>
                 </div>
               </div>
             </div> : <>
@@ -1113,15 +1146,17 @@ export default function Home() {
               </div>}
               <div className="full-width"><Field label="Payment intent ID"><input value={intentId} onChange={(e) => setIntentId(e.target.value as Hex)} placeholder="0x…" required/></Field></div>
               <p className="hint">We simulate the payment first. ERC-20 payments only request approval when necessary.</p>
-              <button className="primary-button" disabled={busy || !paymentDetails}>{busy ? "Confirming…" : "Review and pay"}</button>
+              <button className="primary-button" disabled={busy || !paymentDetails || (paymentDetails && paymentStatus(paymentDetails.status, paymentDetails.expiresAt) !== "Pending")}>
+                {busy ? "Confirming…" : paymentDetails && paymentStatus(paymentDetails.status, paymentDetails.expiresAt) !== "Pending" ? paymentStatus(paymentDetails.status, paymentDetails.expiresAt) : "Review and pay"}
+              </button>
             </>}
           </form>}
-          {view === "pay" && paidReceipt && <div className={`payment-receipt${isCustomerPaymentView ? " customer-payment-view" : ""}`}>
+          {view === "pay" && (paidReceipt || paymentDetails?.status === 1) && <div className={`payment-receipt${isCustomerPaymentView ? " customer-payment-view" : ""}`}>
             <p className="eyebrow">PAYMENT SUCCESSFUL</p>
             <h2>Payment received</h2>
             <p>Your payment to {checkoutMerchantName || "the merchant"} was confirmed on-chain.</p>
             {paymentDetails && <div className="receipt-total"><span>Paid</span><strong>{quotedAssetAmount?.toFixed(quotedAssetAmount < 0.01 ? 8 : 4)} {paymentAssetDefinition?.symbol ?? ""} (${(Number(paymentDetails.fiatAmountMinor) / 100).toFixed(2)})</strong></div>}
-            <a href={`https://coston2.testnet.flarescan.com/tx/${paidReceipt}`} target="_blank" rel="noreferrer">View transaction receipt</a>
+            {paidReceipt && <a href={`https://coston2.testnet.flarescan.com/tx/${paidReceipt}`} target="_blank" rel="noreferrer">View transaction receipt</a>}
           </div>}
           {view === "payments" && <div className="payment-history">
             <div className="payment-history-header">
@@ -1133,7 +1168,13 @@ export default function Home() {
                 const assetDefinition = SUPPORTED_ASSETS.find((item) => item.address.toLowerCase() === entry.asset.toLowerCase());
                 const status = paymentStatus(entry.status, entry.expiresAt);
                 return <div className="payment-history-row" key={entry.id}>
-                  <button type="button" className="payment-id" onClick={() => navigator.clipboard?.writeText(entry.id).then(() => toast.success("Payment intent ID copied"))}>{entry.id.slice(0, 10)}…{entry.id.slice(-6)}</button>
+                  {(entry as any).txHash ? (
+                    <a className="payment-id" href={`https://coston2-explorer.flare.network/tx/${(entry as any).txHash}`} target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}>
+                      {entry.id.slice(0, 10)}…{entry.id.slice(-6)}
+                    </a>
+                  ) : (
+                    <span className="payment-id">{entry.id.slice(0, 10)}…{entry.id.slice(-6)}</span>
+                  )}
                   <strong>${(Number(entry.fiatAmountMinor) / 100).toFixed(2)}</strong>
                   <span>{assetDefinition?.symbol ?? "Unknown"}</span>
                   <span className={`payment-status payment-status-${status.toLowerCase()}`}>{status}</span>

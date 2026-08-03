@@ -238,7 +238,8 @@ export default function Home() {
   const [selectedAssets, setSelectedAssets] = useState<Set<string>>(new Set());
   const [enablingProgress, setEnablingProgress] = useState<{ current: number; total: number } | null>(null);
   const [assetDropdownOpen, setAssetDropdownOpen] = useState(false);
-  const [enabledAssetsList, setEnabledAssetsList] = useState<Address[]>([]);
+  const [merchantAssetsState, setMerchantAssetsState] = useState<Record<Address, { exists: boolean; enabled: boolean }>>({});
+
   const assetDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -631,51 +632,79 @@ export default function Home() {
 
 
 
-  async function enableSelectedAssets(event: FormEvent<HTMLFormElement>) {
+  async function updateSelectedAssets(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!merchantId) return toast.error("A merchant ID is required before enabling assets.");
-    const toEnable = SUPPORTED_ASSETS.filter((a) => selectedAssets.has(a.symbol));
-    if (toEnable.length === 0) return toast.error("Tick at least one asset to enable.");
+    if (!merchantId) return toast.error("A merchant ID is required before updating assets.");
+    
+    const toDisable = SUPPORTED_ASSETS.filter(a => !selectedAssets.has(a.symbol) && merchantAssetsState[a.address]?.enabled);
+    const toEnableOrAdd = SUPPORTED_ASSETS.filter(a => selectedAssets.has(a.symbol) && !merchantAssetsState[a.address]?.enabled);
+    const toAdd = toEnableOrAdd.filter(a => !merchantAssetsState[a.address]?.exists);
+    const toReEnable = toEnableOrAdd.filter(a => merchantAssetsState[a.address]?.exists);
+
+    if (toDisable.length === 0 && toAdd.length === 0 && toReEnable.length === 0) {
+      return toast.error("No changes to save.");
+    }
+    
     setBusy(true);
 
-    // Try atomic batch first (single tx, all-or-nothing)
-    const assetInputs = toEnable.map((a) => ({
-      asset: a.address,
-      feedId: a.feedId,
-      tokenDecimals: a.tokenDecimals,
-      feedDecimals: a.feedDecimals,
-    }));
-
     try {
-      setEnablingProgress({ current: 1, total: 1 });
-      const hash = await sendWrite("addAssets", [merchantId, assetInputs]);
+      let enabledCount = 0;
+      let disabledCount = 0;
+      const totalOps = toDisable.length + toReEnable.length + (toAdd.length > 0 ? 1 : 0);
+      let currentOp = 0;
+      
+      setEnablingProgress({ current: 1, total: Math.max(1, totalOps) });
+
+      for (const assetDef of toDisable) {
+          await sendWrite("disableAsset", [merchantId, assetDef.address]);
+          disabledCount++;
+          currentOp++;
+          setEnablingProgress({ current: currentOp + 1, total: totalOps });
+      }
+
+      for (const assetDef of toReEnable) {
+          await sendWrite("enableAsset", [merchantId, assetDef.address]);
+          enabledCount++;
+          currentOp++;
+          setEnablingProgress({ current: currentOp + 1, total: totalOps });
+      }
+
+      if (toAdd.length > 0) {
+          const assetInputs = toAdd.map((a) => ({
+            asset: a.address,
+            feedId: a.feedId,
+            tokenDecimals: a.tokenDecimals,
+            feedDecimals: a.feedDecimals,
+          }));
+          try {
+            await sendWrite("addAssets", [merchantId, assetInputs]);
+            enabledCount += toAdd.length;
+          } catch (batchErr) {
+            toast.success(`Batch failed — trying individually: ${batchErr instanceof Error ? batchErr.message.slice(0, 60) : "error"}`);
+            for (const assetDef of toAdd) {
+              try {
+                await sendWrite("addAsset", [merchantId, assetDef.address, assetDef.feedId, assetDef.tokenDecimals, assetDef.feedDecimals]);
+                enabledCount++;
+              } catch (err) {
+                toast.success(`✗ ${assetDef.symbol}: ${err instanceof Error ? err.message.slice(0, 60) : "Failed"}`);
+              }
+            }
+          }
+      }
+
       setEnablingProgress(null);
       setBusy(false);
-      toast.success(`✓ ${toEnable.length} asset${toEnable.length === 1 ? "" : "s"} enabled: ${hash.slice(0, 10)}…`);
+      if (enabledCount > 0 || disabledCount > 0) {
+        toast.success(`Updated: ${enabledCount} enabled, ${disabledCount} disabled`);
+      }
       loadEnabledAssets(true);
       setView("checkout");
       refreshAfterContractWrite();
-    } catch (batchErr) {
-      // Fallback: enable one-by-one (handles already-existing asset errors gracefully)
-      toast.success(`Batch failed — trying individually: ${batchErr instanceof Error ? batchErr.message.slice(0, 60) : "error"}`);
-      let enabled = 0;
-      for (const assetDef of toEnable) {
-        try {
-          setEnablingProgress({ current: enabled + 1, total: toEnable.length });
-          await sendWrite("addAsset", [merchantId, assetDef.address, assetDef.feedId, assetDef.tokenDecimals, assetDef.feedDecimals]);
-          enabled++;
-          toast.success(`✓ ${assetDef.symbol} enabled (${enabled}/${toEnable.length})`);
-        } catch (err) {
-          toast.success(`✗ ${assetDef.symbol}: ${err instanceof Error ? err.message.slice(0, 60) : "Failed"}`);
-        }
-      }
+    } catch (err) {
+      toast.success(`Error updating assets: ${err instanceof Error ? err.message.slice(0, 60) : "Failed"}`);
       setEnablingProgress(null);
       setBusy(false);
       loadEnabledAssets(true);
-      if (enabled > 0) {
-        setView("checkout");
-        refreshAfterContractWrite();
-      }
     }
   }
 
@@ -725,23 +754,30 @@ export default function Home() {
   async function loadEnabledAssets(silent = false) {
     if (!merchantId) return;
     try {
-      const topic0 = keccak256(stringToHex("AssetEnabled(bytes32,address,bytes21,uint8,uint8)"));
-      const url = `https://coston2-explorer.flare.network/api?module=logs&action=getLogs&address=${intrlinkAddress}&fromBlock=${intrlinkDeploymentBlock}&toBlock=latest&topic0=${topic0}&topic0_1_opr=and&topic1=${merchantId}`;
-      const res = await fetch(url);
-      const data = await res.json();
-      if (data.status !== "1" && data.message !== "No records found") throw new Error(data.message || "Failed to fetch logs");
+      const calls = SUPPORTED_ASSETS.map(a => 
+        publicClient.readContract({
+          address: intrlinkAddress,
+          abi: intrlinkAbi,
+          functionName: "getMerchantAsset",
+          args: [merchantId, a.address]
+        }).then((data: any) => ({ address: a.address, symbol: a.symbol, exists: data.exists, enabled: data.enabled }))
+      );
+      const results = await Promise.all(calls);
       
-      const logs = data.result || [];
-      const assetAddresses = logs.flatMap((log: any) => {
-        try {
-          const decoded = decodeEventLog({ abi: [assetEnabledEvent], data: log.data, topics: log.topics });
-          return (decoded.args as any).asset ? [(decoded.args as any).asset] : [];
-        } catch(e) { return []; }
-      });
-      const uniqueAssets = Array.from(new Set(assetAddresses));
-      setEnabledAssetsList(uniqueAssets as Address[]);
+      const newState: Record<Address, { exists: boolean; enabled: boolean }> = {};
+      const activeSymbols = new Set<string>();
+      
+      for (const res of results) {
+        newState[res.address as Address] = { exists: res.exists, enabled: res.enabled };
+        if (res.enabled) {
+          activeSymbols.add(res.symbol);
+        }
+      }
+      
+      setMerchantAssetsState(newState);
+      setSelectedAssets(activeSymbols);
     } catch (error) {
-      if (!silent) toast.error(getErrMsg(error, "Could not load enabled assets"));
+      if (!silent) toast.error(getErrMsg(error, "Could not load configured assets"));
     }
   }
 
@@ -753,7 +789,7 @@ export default function Home() {
       const url = `https://coston2-explorer.flare.network/api?module=logs&action=getLogs&address=${intrlinkAddress}&fromBlock=${intrlinkDeploymentBlock}&toBlock=latest&topic0=${topic0}&topic0_1_opr=and&topic1=${merchantId}`;
       const res = await fetch(url);
       const data = await res.json();
-      if (data.status !== "1" && data.message !== "No records found") throw new Error(data.message || "Failed to fetch logs");
+      if (data.status !== "1" && data.message !== "No records found" && data.message !== "No logs found") throw new Error(data.message || "Failed to fetch logs");
       
       const logs = data.result || [];
       const items = logs.flatMap((log: any) => {
@@ -778,7 +814,7 @@ export default function Home() {
       const url = `https://coston2-explorer.flare.network/api?module=logs&action=getLogs&address=${intrlinkAddress}&fromBlock=${intrlinkDeploymentBlock}&toBlock=latest&topic0=${topic0}&topic0_2_opr=and&topic2=${merchantId}`;
       const res = await fetch(url);
       const data = await res.json();
-      if (data.status !== "1" && data.message !== "No records found") throw new Error(data.message || "Failed to fetch logs");
+      if (data.status !== "1" && data.message !== "No records found" && data.message !== "No logs found") throw new Error(data.message || "Failed to fetch logs");
       
       const logs = data.result || [];
       for (const log of logs) {
@@ -889,7 +925,12 @@ export default function Home() {
   </div> : null;
   const totalEarned = paymentHistory.filter((entry) => paymentStatus(entry.status, entry.expiresAt) === "Paid").reduce((total, entry) => total + entry.fiatAmountMinor, BigInt(0));
 
-  return <main className="app" id="top"><nav className="navbar connected-nav"><div className="nav-inner"><div className="nav-identity"><Brand/>{merchantId && merchantName && <span className="merchant-nav-name">{merchantName}</span>}</div>{merchantId && enabledAssetsList.length > 0 && Object.keys(assetPrices).length > 0 && <div className="nav-ticker" style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '12px', color: 'var(--mint)', background: 'rgba(255,255,255,0.1)', padding: '4px 12px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.15)' }}>{SUPPORTED_ASSETS.filter(a => enabledAssetsList.some(ea => ea.toLowerCase() === a.address.toLowerCase())).map(a => { const p = assetPrices[a.symbol]; if (!p) return null; const rate = 1 / p; const formatted = rate < 0.01 ? rate.toPrecision(3) : rate.toFixed(2); return <span key={a.symbol} style={{ fontWeight: 600 }}>{formatted} {a.symbol} / $1</span>; })}</div>}<div className="nav-actions">{merchantId && <button className="merchant-edit-btn" onClick={() => setIsMerchantModalOpen(true)}><ShopOutlined /> <span>Edit Merchant</span></button>}<button className="wallet-chip" onClick={() => navigator.clipboard?.writeText(account).then(() => toast.success("Wallet address copied")).catch(() => {})} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 500, padding: '5px 12px' }}><div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '8px', fontSize: '12px', opacity: 0.9 }}>{balance !== null && <span>{balance} C2FLR</span>}{fxrpBalance !== null && <span style={{ opacity: 0.7 }}>{fxrpBalance} FXRP</span>}</div><span style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.15)', padding: '2px 8px', borderRadius: '12px' }}><WalletOutlined style={{ opacity: 0.7 }} /> <span>{walletLabel}</span> <span>⎘</span></span></button><button className="disconnect-button" style={{ padding: '5px 12px' }} onClick={() => { setAccount(undefined); toast.success("Wallet disconnected"); }}>Disconnect</button></div></div></nav><section className="workspace">{view !== "checkout" && <header className="workspace-header"><h1>{view === "merchant" ? "Set up your merchant account" : view === "asset" ? "Choose what you accept" : view === "payments" ? "Payment history" : "Settle a checkout"}</h1><p>{view === "merchant" ? "Your wallet will receive payments directly." : view === "asset" ? "Enable the assets customers can use to pay you." : view === "payments" ? "Track every customer checkout and its on-chain status." : "Enter a payment intent to complete a customer payment."}</p></header>}<div className="view-tabs">{(["merchant", "asset", "checkout", "pay", "payments"] as View[]).filter((item) => !merchantId ? item === "merchant" : item !== "merchant").map((item) => <button className={view === item ? "selected" : ""} onClick={() => { setView(item); if (item === "payments") loadPaymentHistory(); }} key={item}>{item === "merchant" && <ShopOutlined />}{item === "asset" && <WalletOutlined />}{item === "checkout" && <ShoppingCartOutlined />}{(item === "pay" || item === "payments") && <CreditCardOutlined />}<span>{item === "asset" ? "Assets" : item === "checkout" ? "Checkout" : item === "payments" ? "Payments" : item === "pay" ? "Pay" : "Merchant"}</span></button>)}</div>
+  return <main className="app" id="top"><nav className="navbar connected-nav"><div className="nav-inner"><div className="nav-identity"><Brand/>{merchantId && merchantName && <span className="merchant-nav-name">{merchantName}</span>}</div>{merchantId && Object.values(merchantAssetsState).some(a => a.enabled) && Object.keys(assetPrices).length > 0 && (
+              <div className="nav-ticker" style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '12px', color: 'var(--mint)', background: 'rgba(255,255,255,0.1)', padding: '4px 12px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.15)' }}>
+                {SUPPORTED_ASSETS.filter(a => merchantAssetsState[a.address]?.enabled).map(a => {
+                  const p = assetPrices[a.symbol];
+                  if (!p) return null;
+                  const rate = 1 / p; const formatted = rate < 0.01 ? rate.toPrecision(3) : rate.toFixed(2); return <span key={a.symbol} style={{ fontWeight: 600 }}>{formatted} {a.symbol} / $1</span>; })}</div>)}<div className="nav-actions">{merchantId && <button className="merchant-edit-btn" onClick={() => setIsMerchantModalOpen(true)}><ShopOutlined /> <span>Edit Merchant</span></button>}<button className="wallet-chip" onClick={() => navigator.clipboard?.writeText(account).then(() => toast.success("Wallet address copied")).catch(() => {})} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 500, padding: '5px 12px' }}><div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '8px', fontSize: '12px', opacity: 0.9 }}>{balance !== null && <span>{balance} C2FLR</span>}{fxrpBalance !== null && <span style={{ opacity: 0.7 }}>{fxrpBalance} FXRP</span>}</div><span style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.15)', padding: '2px 8px', borderRadius: '12px' }}><WalletOutlined style={{ opacity: 0.7 }} /> <span>{walletLabel}</span> <span>⎘</span></span></button><button className="disconnect-button" style={{ padding: '5px 12px' }} onClick={() => { setAccount(undefined); toast.success("Wallet disconnected"); }}>Disconnect</button></div></div></nav><section className="workspace">{view !== "checkout" && <header className="workspace-header"><h1>{view === "merchant" ? "Set up your merchant account" : view === "asset" ? "Choose what you accept" : view === "payments" ? "Payment history" : "Settle a checkout"}</h1><p>{view === "merchant" ? "Your wallet will receive payments directly." : view === "asset" ? "Enable the assets customers can use to pay you." : view === "payments" ? "Track every customer checkout and its on-chain status." : "Enter a payment intent to complete a customer payment."}</p></header>}<div className="view-tabs">{(["merchant", "asset", "checkout", "pay", "payments"] as View[]).filter((item) => !merchantId ? item === "merchant" : item !== "merchant").map((item) => <button className={view === item ? "selected" : ""} onClick={() => { setView(item); if (item === "payments") loadPaymentHistory(); }} key={item}>{item === "merchant" && <ShopOutlined />}{item === "asset" && <WalletOutlined />}{item === "checkout" && <ShoppingCartOutlined />}{(item === "pay" || item === "payments") && <CreditCardOutlined />}<span>{item === "asset" ? "Assets" : item === "checkout" ? "Checkout" : item === "payments" ? "Payments" : item === "pay" ? "Pay" : "Merchant"}</span></button>)}</div>
     {view === "pay" && !isCustomerPaymentView && <button type="button" className="clear-checkout-button" onClick={clearPaymentIntent}>Clear</button>}
     <div className="view-container">
       <AnimatePresence mode="wait">
@@ -915,7 +956,7 @@ export default function Home() {
           )}
           {view === "asset" && (
             <div className="asset-view-container">
-              <form className="asset-form" onSubmit={enableSelectedAssets}>
+              <form className="asset-form" onSubmit={updateSelectedAssets}>
                 {/* Asset multi-select dropdown */}
               <div className="asset-dropdown-field" ref={assetDropdownRef}>
                 <span className="asset-list-label">Payment assets to accept</span>
@@ -951,21 +992,18 @@ export default function Home() {
                       style={{ transformOrigin: "top" }}
                     >
                       {SUPPORTED_ASSETS.map((a: SupportedAsset, i) => {
-                        const isAlreadyEnabled = enabledAssetsList.some(ea => ea.toLowerCase() === a.address.toLowerCase());
-                        const checked = selectedAssets.has(a.symbol) || isAlreadyEnabled;
+                        const checked = selectedAssets.has(a.symbol);
                         return (
                           <label
                             key={a.symbol}
-                            className={`asset-list-row${checked && !isAlreadyEnabled ? " asset-list-row--checked" : ""}${i === SUPPORTED_ASSETS.length - 1 ? " asset-list-row--last" : ""}`}
+                            className={`asset-list-row${checked ? " asset-list-row--checked" : ""}${i === SUPPORTED_ASSETS.length - 1 ? " asset-list-row--last" : ""}`}
                             htmlFor={`asset-${a.symbol}`}
-                            style={isAlreadyEnabled ? { opacity: 0.4, cursor: "not-allowed", filter: "grayscale(100%) blur(0.5px)", backgroundColor: "var(--bg-secondary)" } : {}}
                           >
                             <input
                               id={`asset-${a.symbol}`}
                               type="checkbox"
                               className="asset-checkbox"
                               checked={checked}
-                              disabled={isAlreadyEnabled}
                               onChange={() => toggleAsset(a.symbol)}
                             />
                             <span className="asset-row-symbol">{a.symbol}</span>
@@ -1006,28 +1044,25 @@ export default function Home() {
                 </div>
               )}
 
-              <button
-                className="primary-button asset-submit-btn"
-                disabled={busy || selectedAssets.size === 0}
-              >
-                {busy
-                  ? enablingProgress
-                    ? enablingProgress.total === 1 && selectedAssets.size > 1 
-                      ? "Enabling Batch…" 
-                      : `Enabling ${enablingProgress.current}/${enablingProgress.total}…`
-                    : "Simulating…"
-                  : selectedAssets.size === 0
-                    ? "Select assets above"
-                    : `Enable ${selectedAssets.size} asset${selectedAssets.size === 1 ? "" : "s"}`
-                }
-              </button>
+              <div className="asset-form-actions">
+                <button
+                  type="submit"
+                  className="asset-submit-btn"
+                  disabled={busy}
+                >
+                  {busy
+                    ? "Updating assets…"
+                  : "Save Changes"
+                  }
+                </button>
+              </div>
             </form>
 
-            {enabledAssetsList.length > 0 && (
+            {Object.values(merchantAssetsState).some(a => a.enabled) && (
               <div className="enabled-assets-section" style={{ marginTop: "32px", borderTop: "1px solid var(--border-color)", paddingTop: "24px" }}>
                 <h3 style={{ margin: "0 0 16px", fontSize: "0.9rem", color: "var(--mint)", fontWeight: "600" }}>Currently Enabled Assets</h3>
                 <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                  {enabledAssetsList.map(a => {
+                  {Object.entries(merchantAssetsState).filter(([_, state]) => state.enabled).map(([a]) => {
                     const match = SUPPORTED_ASSETS.find(sa => sa.address.toLowerCase() === a.toLowerCase());
                     if (!match) return null;
                     return (
@@ -1103,7 +1138,7 @@ export default function Home() {
                        <div style={{ display: 'flex', gap: '8px' }}>
                          <select value={asset} onChange={(e) => setAsset(e.target.value)} required style={{ flex: 1, padding: '12px 14px', borderRadius: '8px', border: '1px solid #1b5e2040', background: '#fff', color: 'var(--forest)', fontSize: '14px', outline: 'none', cursor: 'pointer' }}>
                            <option value="">Select payment asset...</option>
-                           {SUPPORTED_ASSETS.filter((a) => enabledAssetsList.some((ea) => ea.toLowerCase() === a.address.toLowerCase())).map((a) => <option value={a.address} key={a.symbol}>{a.symbol} — {a.name}</option>)}
+                           {SUPPORTED_ASSETS.filter((a) => merchantAssetsState[a.address]?.enabled).map((a) => <option value={a.address} key={a.symbol}>{a.symbol} — {a.name}</option>)}
                          </select>
                          <div style={{ display: 'flex', alignItems: 'center', background: '#fff', border: '1px solid #1b5e2040', borderRadius: '8px', paddingRight: '12px' }}>
                            <input type="number" min="1" value={expiryMinutes} onChange={(e) => setExpiryMinutes(parseInt(e.target.value) || 1)} title="Quote validity in minutes" required style={{ width: '56px', padding: '12px 8px', border: 'none', background: 'transparent', color: 'var(--forest)', fontSize: '14px', outline: 'none', textAlign: 'center' }} />
@@ -1279,7 +1314,7 @@ export default function Home() {
         </div>
       )}
     </AnimatePresence>
-    {merchantId && <Copilot merchantName={merchantName} paymentHistory={paymentHistory} balance={balance} assetPrices={assetPrices} />}
+    {merchantId && <Copilot merchantName={merchantName} paymentHistory={paymentHistory} balance={balance} assetPrices={assetPrices} isCheckoutDrawerOpen={isCartDrawerOpen} />}
   </section><Toaster position="bottom-right" /></main>;
 }
 

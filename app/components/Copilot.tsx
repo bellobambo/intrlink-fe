@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { MessageOutlined, CloseOutlined, RobotOutlined, SendOutlined } from "@ant-design/icons";
 import ReactMarkdown from "react-markdown";
+import { motion } from "framer-motion";
 
 interface Message {
   role: "system" | "user" | "assistant";
@@ -14,9 +15,10 @@ interface CopilotProps {
   paymentHistory: any[];
   balance: string | null;
   assetPrices: Record<string, number>;
+  isCheckoutDrawerOpen: boolean;
 }
 
-export default function Copilot({ merchantName, paymentHistory, balance, assetPrices }: CopilotProps) {
+export default function Copilot({ merchantName, paymentHistory, balance, assetPrices, isCheckoutDrawerOpen }: CopilotProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -83,9 +85,12 @@ Provide concise, helpful answers. Use markdown for formatting. If the user asks 
 
   return (
     <>
-      <button 
+      <motion.button 
         className="copilot-toggle"
         onClick={() => setIsOpen(true)}
+        initial={false}
+        animate={{ x: isCheckoutDrawerOpen ? "calc(-100vw + 56px + 48px)" : "0px" }}
+        transition={{ type: "spring", stiffness: 300, damping: 30 }}
         style={{
           position: "fixed",
           bottom: "24px",
@@ -103,14 +108,17 @@ Provide concise, helpful answers. Use markdown for formatting. If the user asks 
           fontSize: "24px",
           cursor: "pointer",
           zIndex: 9999,
-          transition: "transform 0.2s",
         }}
       >
         <RobotOutlined />
-      </button>
+      </motion.button>
 
       {isOpen && (
-        <div style={{
+        <motion.div 
+          initial={false}
+          animate={{ x: isCheckoutDrawerOpen ? "calc(-100vw + 380px + 48px)" : "0px" }}
+          transition={{ type: "spring", stiffness: 300, damping: 30 }}
+          style={{
           position: "fixed",
           bottom: "24px",
           right: "24px",
@@ -229,7 +237,7 @@ Provide concise, helpful answers. Use markdown for formatting. If the user asks 
               <SendOutlined />
             </button>
           </form>
-        </div>
+        </motion.div>
       )}
     </>
   );

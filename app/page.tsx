@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { isAddress, keccak256, stringToHex, zeroAddress, decodeEventLog, type Address, type Hex } from "viem";
 import { connectCoston2, erc20Abi, getProvider, intrlinkAbi, intrlinkAddress, intrlinkDeploymentBlock, itemAddedEvent, assetEnabledEvent, paymentIntentCreatedEvent, publicClient, indexerClient, walletClient } from "./lib/intrlink";
 import { Drawer, QRCode } from "antd";
+import Copilot from "./components/Copilot";
 import { ShopOutlined, WalletOutlined, AppstoreOutlined, ShoppingCartOutlined, CreditCardOutlined, DeleteOutlined } from "@ant-design/icons";
 import { motion, AnimatePresence } from "framer-motion";
 import toast, { Toaster } from "react-hot-toast";
@@ -121,7 +122,7 @@ const SUPPORTED_ASSETS = [
 
 type SupportedAsset = typeof SUPPORTED_ASSETS[number];
 
-type View = "merchant" | "asset" | "checkout" | "pay" | "payments";
+export type View = "merchant" | "asset" | "checkout" | "pay" | "payments";
 type CatalogueItem = { id: Hex; name: string; priceMinor: bigint; category: string };
 type PaymentDetails = { merchantId: Hex; asset: Address; fiatAmountMinor: bigint; requiredAssetAmount: bigint; expiresAt: bigint; status: number };
 type PaymentLine = { id: Hex; name: string; quantity: bigint; unitPriceMinor: bigint };
@@ -204,7 +205,7 @@ function clearMerchantProfileCache(account: Address) {
 function refreshAfterContractWrite() {
   if (typeof window === "undefined") return;
   window.setTimeout(() => {
-    window.location.reload();
+    window.dispatchEvent(new Event("contract-write"));
   }, 450);
 }
 
@@ -218,6 +219,14 @@ export default function Home() {
   const [fxrpBalance, setFxrpBalance] = useState<string | null>(null);
   const [view, setView] = useState<View>("merchant");
   const [busy, setBusy] = useState(false);
+  const [refreshTick, setRefreshTick] = useState(0);
+
+  useEffect(() => {
+    const handleWrite = () => setRefreshTick(t => t + 1);
+    window.addEventListener("contract-write", handleWrite);
+    return () => window.removeEventListener("contract-write", handleWrite);
+  }, []);
+
   const [isCheckingMerchant, setIsCheckingMerchant] = useState(false);
     const [merchantName, setMerchantName] = useState("");
   const [ownerName, setOwnerName] = useState("");
@@ -267,16 +276,22 @@ export default function Home() {
   }, [account, settlementAddressInput]);
 
   useEffect(() => {
-    if (view === "checkout" && merchantId && catalogue.length === 0) {
+    if (view === "checkout" && merchantId) {
       loadCatalogue(true);
     }
-  }, [view, merchantId]);
+  }, [view, merchantId, refreshTick]);
 
   useEffect(() => {
-    if ((view === "asset" || view === "checkout") && merchantId && enabledAssetsList.length === 0) {
+    if ((view === "asset" || view === "checkout") && merchantId) {
       loadEnabledAssets(true);
     }
-  }, [view, merchantId]);
+  }, [view, merchantId, refreshTick]);
+
+  useEffect(() => {
+    if (view === "payments" && merchantId) {
+      loadPaymentHistory();
+    }
+  }, [view, merchantId, refreshTick]);
 
   useEffect(() => {
     fetch("https://api.coingecko.com/api/v3/simple/price?ids=usd-coin,tether,weth,ripple,flare-networks&vs_currencies=usd")
@@ -339,7 +354,7 @@ export default function Home() {
     }
     loadPaymentSummary();
     return () => { cancelled = true; };
-  }, [intentId]);
+  }, [intentId, refreshTick]);
 
   useEffect(() => {
     if (!account) {
@@ -359,7 +374,7 @@ export default function Home() {
     }).then((bal) => {
       setFxrpBalance((Number(bal) / 1e18).toFixed(2));
     }).catch(console.error);
-  }, [account]);
+  }, [account, refreshTick]);
 
 
   useEffect(() => {
@@ -441,7 +456,7 @@ export default function Home() {
     }
     findMerchant();
     return () => { cancelled = true; };
-  }, [account]);
+  }, [account, refreshTick]);
 
   useEffect(() => {
     const provider = getProvider();
@@ -1116,7 +1131,7 @@ export default function Home() {
               </Drawer>
             </div>
           )}
-          {view === "pay" && (!paidReceipt && paymentDetails?.status !== 1) && <form className={`form-grid${isCustomerPaymentView ? " customer-payment-view" : ""}`} onSubmit={payIntent}>
+          {view === "pay" && (!paidReceipt && paymentDetails?.status !== 2) && <form className={`form-grid${isCustomerPaymentView ? " customer-payment-view" : ""}`} onSubmit={payIntent}>
             {isMerchantPayment ? <div className="full-width merchant-payment-grid">
               {paymentDetails && <div className="payment-summary">
                 <p className="eyebrow">PAYMENT REQUEST</p>
@@ -1145,13 +1160,13 @@ export default function Home() {
                 <div className="payment-total"><span>Total</span><strong>${(Number(paymentDetails.fiatAmountMinor) / 100).toFixed(2)}</strong></div>
               </div>}
               <div className="full-width"><Field label="Payment intent ID"><input value={intentId} onChange={(e) => setIntentId(e.target.value as Hex)} placeholder="0x…" required/></Field></div>
-              <p className="hint">We simulate the payment first. ERC-20 payments only request approval when necessary.</p>
+
               <button className="primary-button" disabled={busy || !paymentDetails || (paymentDetails && paymentStatus(paymentDetails.status, paymentDetails.expiresAt) !== "Pending")}>
                 {busy ? "Confirming…" : paymentDetails && paymentStatus(paymentDetails.status, paymentDetails.expiresAt) !== "Pending" ? paymentStatus(paymentDetails.status, paymentDetails.expiresAt) : "Review and pay"}
               </button>
             </>}
           </form>}
-          {view === "pay" && (paidReceipt || paymentDetails?.status === 1) && <div className={`payment-receipt${isCustomerPaymentView ? " customer-payment-view" : ""}`}>
+          {view === "pay" && (paidReceipt || paymentDetails?.status === 2) && <div className={`payment-receipt${isCustomerPaymentView ? " customer-payment-view" : ""}`}>
             <p className="eyebrow">PAYMENT SUCCESSFUL</p>
             <h2>Payment received</h2>
             <p>Your payment to {checkoutMerchantName || "the merchant"} was confirmed on-chain.</p>
@@ -1264,6 +1279,7 @@ export default function Home() {
         </div>
       )}
     </AnimatePresence>
+    {merchantId && <Copilot merchantName={merchantName} paymentHistory={paymentHistory} balance={balance} assetPrices={assetPrices} />}
   </section><Toaster position="bottom-right" /></main>;
 }
 

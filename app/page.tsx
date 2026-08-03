@@ -1025,9 +1025,9 @@ export default function Home() {
                 </AnimatePresence>
               </div>
 
-              <p className="hint" style={{ marginTop: "4px" }}>
+              {/* <p className="hint" style={{ marginTop: "4px" }}>
                 <b>FTSOv2 verified assets.</b> Feed IDs are derived from the Flare oracle naming convention (category byte + hex-encoded name, padded to 21 bytes). Native C2FLR uses the zero address.
-              </p>
+              </p> */}
 
               {/* Progress bar while enabling */}
               {enablingProgress && (

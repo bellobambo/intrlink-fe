@@ -373,7 +373,7 @@ export default function Home() {
       functionName: "balanceOf",
       args: [account]
     }).then((bal) => {
-      setFxrpBalance((Number(bal) / 1e18).toFixed(2));
+      setFxrpBalance((Number(bal) / 1e6).toFixed(2));
     }).catch(console.error);
   }, [account, refreshTick]);
 

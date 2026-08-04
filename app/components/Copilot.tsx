@@ -33,7 +33,7 @@ ${Object.entries(assetPrices).map(([sym, price]) => `- ${sym}: $${price}`).join(
 Recent Payment History (JSON format):
 ${JSON.stringify(paymentHistory.slice(0, 50), (key, value) => typeof value === 'bigint' ? value.toString() : value)}
 
-Provide concise, helpful answers. Use markdown for formatting. If the user asks for a sales summary, calculate totals from the payment history.`;
+Provide concise, helpful answers. Use markdown for formatting. You are tailored to act as a merchant assistant. Based on the PRD, your capabilities include getting sales summaries (getSalesSummary), drafting checkout carts (draftCart), and analyzing transactions. If the user asks for a sales summary, calculate totals from the payment history.`;
 
   useEffect(() => {
     if (messagesEndRef.current) {
@@ -73,8 +73,44 @@ Provide concise, helpful answers. Use markdown for formatting. If the user asks 
 
       if (!response.ok) throw new Error("Failed to fetch");
 
-      const data = await response.json();
-      setMessages(prev => [...prev, { role: "assistant", content: data.content }]);
+      setMessages(prev => [...prev, { role: "assistant", content: "" }]);
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      if (!reader) throw new Error("No stream reader");
+
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || ""; // Keep the last incomplete line in the buffer
+        
+        for (const line of lines) {
+          if (line.trim().startsWith("data: ") && !line.includes("[DONE]")) {
+            try {
+              const data = JSON.parse(line.trim().slice(6));
+              const contentDelta = data.choices[0]?.delta?.content;
+              if (contentDelta) {
+                setMessages(prev => {
+                  const newMsgs = [...prev];
+                  const lastIdx = newMsgs.length - 1;
+                  // Clone the message object to avoid React StrictMode double mutation!
+                  newMsgs[lastIdx] = { 
+                    ...newMsgs[lastIdx], 
+                    content: newMsgs[lastIdx].content + contentDelta 
+                  };
+                  return newMsgs;
+                });
+              }
+            } catch (e) {
+              // Ignore partial JSON parsing errors
+            }
+          }
+        }
+      }
     } catch (error) {
       console.error(error);
       setMessages(prev => [...prev, { role: "assistant", content: "Sorry, I encountered an error. Please try again." }]);

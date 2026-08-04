@@ -38,6 +38,9 @@ export default function DocsPage() {
               <li><strong>Interoperability & FAssets:</strong> Intrlink inherently supports Flare's FAssets (like FXRP, FBTC), bringing real-world DeFi utility and spending power to tokens that previously lacked smart contract capabilities on their native chains.</li>
               <li><strong>EVM Execution:</strong> Deployed natively on the Flare network (currently live on the Coston2 Testnet), utilizing Flare's high-throughput EVM to route payments atomically and non-custodially. The <code>IntrLink.sol</code> smart contract acts purely as a settlement router and data validator—it never custodies user or merchant funds.</li>
             </ul>
+            <p style={{ lineHeight: '1.7', color: 'var(--text-secondary)', fontSize: '1rem', marginTop: '16px' }}>
+              Additionally, Intrlink features an <strong>AI-powered Copilot</strong> that acts as a merchant assistant. It allows merchants to analyze sales, summarize payments, and manage their storefront efficiently using natural language queries directly from the dashboard.
+            </p>
           </div>
 
           <div>

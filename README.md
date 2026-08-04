@@ -6,6 +6,7 @@ By integrating seamlessly with Flare's FTSOv2 (Flare Time Series Oracle), Intrli
 
 The platform is strictly non-custodial. All customer payments are routed directly and instantly to the merchant's predefined settlement wallet via the smart contract, eliminating intermediaries and settlement delays.
 
+Additionally, Intrlink features an AI-powered Copilot that acts as a merchant assistant. It allows merchants to analyze sales, summarize payments, and manage their storefront efficiently using natural language queries.
 ## Links & Repositories
 
 - **Frontend Repository**: [https://github.com/bellobambo/intrlink-fe](https://github.com/bellobambo/intrlink-fe)
